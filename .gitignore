@@ -1,0 +1,43 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+env/
+.venv/
+ENV/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Jupyter runtime files
+.jupyter/
+
+# Data/outputs (optional — entfernen falls du diese mit committen möchtest)
+*.csv
+*.xlsx
+*.h5
+*.sqlite
+*.db
+*.pkl
+
+# Environment configuration / secrets
+*.env
+.env*
+
+# macOS / Linux / Windows system files
+.DS_Store
+Thumbs.db
+
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/*.code-snippets
+!*.code-workspace
+
+# Built Visual Studio Code Extensions
+*.vsix
