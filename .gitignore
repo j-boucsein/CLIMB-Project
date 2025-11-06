@@ -22,6 +22,12 @@ ENV/
 *.sqlite
 *.db
 *.pkl
+*.pdf
+*.png
+*.hdf5
+*.fits
+*.mp4
+*.pth
 
 # Environment configuration / secrets
 *.env
