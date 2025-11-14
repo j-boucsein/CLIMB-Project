@@ -16,12 +16,12 @@ def t_matter_lambda(a, Omega_m, Omega_Lambda, h):
 
 def delta_z(d_c, z_start, Omega_m, Omega_Lambda, h):
     """
-    d_c (float)     : comoving distance in Mpc 
+    d_c (float)     : distance in cMpc/h
     a_start (float) : scale factor of box
     """
     a_start = 1/(z_start + 1)
-    c = 300000  # in km/s
-    t_tr = d_c*a_start/c *10**6 *8.086*10**13  # in s
+    c = 299792.458  # in km/s
+    t_tr = (d_c/h)*a_start/c *10**6 *8.086*10**13  # in s
     t_start = t_matter_lambda(a_start, Omega_m, Omega_Lambda, h)
 
     d_z = 1/a_start - 1/a_matter_lambda(t_start+t_tr, Omega_m, Omega_Lambda, h)
@@ -30,12 +30,12 @@ def delta_z(d_c, z_start, Omega_m, Omega_Lambda, h):
 
 def corrected_z(d_c, z_start, Omega_m, Omega_Lambda, h):
     """
-    d_c (float)     : comoving distance in Mpc 
+    d_c (float)     : distance in cMpc/h
     a_start (float) : scale factor of box
     """
     a_start = 1/(z_start + 1)
-    c = 300000  # in km/s
-    t_tr = d_c*a_start/c *10**6 *8.086*10**13  # in s
+    c = 299792.458  # in km/s
+    t_tr = (d_c/h)*a_start/c *10**6 *8.086*10**13  # in s
     t_start = t_matter_lambda(a_start, Omega_m, Omega_Lambda, h)
 
     corr_z = 1/a_matter_lambda(t_start-t_tr, Omega_m, Omega_Lambda, h) - 1
