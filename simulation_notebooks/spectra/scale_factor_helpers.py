@@ -2,7 +2,7 @@ import numpy as np
 
 def a_matter_lambda(t, Omega_m, Omega_Lambda, h):
     H_0 = 100 * h * 1/(3.086*1e19)  # in 1/s
-    a = np.power(Omega_m/Omega_Lambda * np.sinh(3/2*H_0*np.sqrt(Omega_Lambda)*t)**2 , 1/3)
+    a = np.power(Omega_m/Omega_Lambda * np.sinh((3*H_0*np.sqrt(Omega_Lambda)*t)/2)**2 , 1/3)
     return a
 
 
