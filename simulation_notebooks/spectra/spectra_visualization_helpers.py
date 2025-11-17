@@ -118,7 +118,7 @@ def get_data_from_fof_folder(output_dir, snapN, param1, param2):
 
 
 def get_data_from_snap_folder(output_dir, snapN, param1, param2):
-    snapdir = glob.glob(output_dir+f"snapdir_*{snapN}")[0]
+    snapdir = glob.glob(output_dir+f"output/snapdir_*{snapN}")[0]
     snap_files = os.listdir(snapdir)
     
     all_values = None
@@ -137,6 +137,18 @@ def get_data_from_snap_folder(output_dir, snapN, param1, param2):
     return all_values
 
 
+def get_boxsize(output_dir, snapN):
+    snapdir = glob.glob(output_dir+f"output/snapdir_*{snapN}")[0]
+    snap_file = os.listdir(snapdir)[0]
+    file_path = snapdir+f"/{snap_file}"
+    
+    with h5py.File(file_path, "r") as f:
+        header = f['Header'] 
+        boxsize = header.attrs['BoxSize']/1e3  # in Mpc
+        
+    return boxsize
+
+
 def custom_hist_z(outpath, snapN, n_bins=100, axis=2):
     """ Creates 1D gas mass histogram from simulated box
     
@@ -153,6 +165,7 @@ def custom_hist_z(outpath, snapN, n_bins=100, axis=2):
 
     coordinates = get_data_from_snap_folder(outpath, snapN, "PartType0", "Coordinates")
     masses = get_data_from_snap_folder(outpath, snapN, "PartType0", "Masses")
+    box_size = get_boxsize(outpath, snapN)
 
     min_coordinate = coordinates[:,axis].min()
     max_coordinate = coordinates[:,axis].max()
@@ -174,6 +187,8 @@ def custom_hist_z(outpath, snapN, n_bins=100, axis=2):
         bin_masses.append(slice_total_mass)
 
     bin_masses = np.array(bin_masses)
+    bin_masses = bin_masses/(box_size*box_size*bin_width) *1e10 # in (M_sun/h) / (cMpc/h)^3
+
     bin_edges = np.array(bin_edges)
 
     return bin_masses, bin_edges
