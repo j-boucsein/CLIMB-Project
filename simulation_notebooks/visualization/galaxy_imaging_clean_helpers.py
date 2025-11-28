@@ -7,6 +7,18 @@ import matplotlib.pyplot as plt
 
 
 def get_data_from_fof_folder(output_dir, snapN, param1, param2):
+    """ function to get data from a specific group folder
+
+    Args:
+        output_dir (string): base directory of the simulation
+        snapN (int): number of the snapshot
+        param1 (string): first parameter in the hdf5 file (i.e. "Halos")
+        param2 (string): second paramter in the hdf5 file (i.e. "GroupMass")
+
+    Returns:
+        np.array: Array containing the specified data
+    """
+
     snapdir = glob.glob(output_dir+f"output/groups_*{snapN}")[0]
     snap_files = os.listdir(snapdir)
     
@@ -28,6 +40,18 @@ def get_data_from_fof_folder(output_dir, snapN, param1, param2):
 
 
 def get_data_from_snap_folder(output_dir, snapN, param1, param2):
+    """ function to get data from a specific snapshot folder
+
+    Args:
+        output_dir (string): base directory of the simulation
+        snapN (int): number of the snapshot
+        param1 (string): first parameter in the hdf5 file (i.e. "PartType0")
+        param2 (string): second paramter in the hdf5 file (i.e. "Coordinates")
+
+    Returns:
+        np.array: Array containing the specified data
+    """
+
     snapdir = glob.glob(output_dir+f"output/snapdir_*{snapN}")[0]
     snap_files = os.listdir(snapdir)
     # print(snap_files)
@@ -59,6 +83,16 @@ def get_data_from_snap_folder(output_dir, snapN, param1, param2):
 
 
 def get_data_from_header(output_dir, snapN, param='BoxSize'):
+    """ get data from the header of a specified simulation and snapshot
+    
+    Args:
+        output_dir (string): base directory of the simulation
+        snapN (int): number of the snapshot
+        param (string): parameter of the hdf5 file (the parameter to read)
+
+    Returns:
+        np.array : Array containing the specific data
+    """
 
     snapdir = glob.glob(output_dir+f"output/snapdir_*{snapN}")[0]
     snap_files = os.listdir(snapdir)
@@ -73,6 +107,18 @@ def get_data_from_header(output_dir, snapN, param='BoxSize'):
 
 
 def get_cosmo_parameters(basepath):
+    """ Returns the cosmological parameters for one simulation
+
+    Args:
+        basepath (string): path to the output folder of the simulation
+
+    Returns:
+        Omega0 (float): Energydensity of matter in the simulation
+        OmegaBaryon (float): Energydensity of Baryons in the simulation
+        OmegaLambda (float): Energydensity of Dark Energy in the simulation
+        HubbleParam (float): h in the simulation
+    """
+
     path = basepath+"output/txt-files/parameters-usedvalues"
     Omega0 = None
     OmegaLambda = None
@@ -94,6 +140,18 @@ def get_cosmo_parameters(basepath):
 
 
 def find_centeral_bh(path, snapN, zoom_in_box_middle, zoom_in_box_size):
+    """ find the ceneral black hole for a given box within a simulation
+
+    Args:
+        path (string): base directory of the simulation
+        snapN (int): number of the snapshot
+        zoom_in_box_middle (np.array): coordinates of center of the box in which to search for the BH
+        zoom_in_box_size (float): half the length of the box to seach for the box (will search from -zoom_in_box_size to zoom_in_box_size)
+
+    Returns:
+        np.array: coordinates of the most massive black hole within the searched box
+    """
+
     particle_type = "PartType5"
     coordinates = get_data_from_snap_folder(path, snapN, particle_type, "Coordinates")
     boxsize = get_data_from_header(path, snapN, 'BoxSize') # in kpc
@@ -117,6 +175,16 @@ def find_centeral_bh(path, snapN, zoom_in_box_middle, zoom_in_box_size):
 
 
 def find_index_of_closest(cms_list, reference_cms):
+    """ finds the index of the coordinates in cms_list which are closest to the reference_cms coordinates
+
+    Args:
+        cms_list (np.array): list of coordinates
+        reference_cms (np.array): coordinates of reference point
+
+    Returns:
+        int: index of coordinates in cms_list which are closest to the reference_cms coordinates
+    """
+
     min_distance = np.inf
     min_dist_index = None
     for i in range(len(cms_list)):
@@ -132,6 +200,25 @@ def find_index_of_closest(cms_list, reference_cms):
 
 
 def subhalo_projection(path, snapN, particle_type="PartType4", zomm_in_box_size=500, look_for_centeral_bh_radius=500, reference_subhalo_cms=None):
+    """ finds coordinates and masses of particles within a box around the centeral particle of a halo clostest to reference_subhalo_cms with length zomm_in_box_size
+        Also finds the Radius with 500 times the critical density of the universe.
+
+        Note: the variable names in this function can be very missleading, sorry :)
+
+    Args:
+        path (string): base directory of the simulation
+        snapN (int): number of the snapshot
+        particle_type (str, optional): the particle type can either be "PartType4" for stars, "PartType0" for gas or "PartType1" for dm. Defaults to "PartType4".
+        zomm_in_box_size (int, optional): half the width of the box. Defaults to 500.
+        look_for_centeral_bh_radius (int, optional): radius in which to look for the centeral black hole. This parameter is not used anymore. Defaults to 500.
+        reference_subhalo_cms (np.array, optional): coordinates which to find the closest halo to. Defaults to None.
+
+    Returns:
+        cms_center_coordinates (np.array): list of coordinates of particles within the box
+        masses (np.array): list of masses for each particle within the box
+        biggest_subhalo_halfmassrad (float): Radius with 500 times the critical density of the universe for that halo
+    """
+    
     subhalo_mass = get_data_from_fof_folder(path, snapN, "Group", "GroupMass") * 1e10 # in M_sun
 
     index_biggest_halo = max(range(len(subhalo_mass)), key=lambda i: subhalo_mass[i])
@@ -186,6 +273,17 @@ def subhalo_projection(path, snapN, particle_type="PartType4", zomm_in_box_size=
 
 
 def create_circle(radius, res=1000):
+    """create res number of points on a circle with radius around 0
+
+    Args:
+        radius (float): radius of the circle
+        res (int, optional): number of points to generate. Defaults to 1000.
+
+    Returns:
+        x (np.array): x coordinates of the points
+        y (np.array): y coordinates of the points
+    """
+
     par = np.linspace(0, 2*np.pi, res)
 
     x = radius * np.cos(par)
