@@ -98,6 +98,17 @@ def redshift_wavelength_backward(z, wavelength):
 
 
 def get_data_from_fof_folder(output_dir, snapN, param1, param2):
+    """ function to get data from a specific group folder
+
+    Args:
+        output_dir (string): base directory of the simulation
+        snapN (int): number of the snapshot
+        param1 (string): first parameter in the hdf5 file (i.e. "Halos")
+        param2 (string): second paramter in the hdf5 file (i.e. "GroupMass")
+
+    Returns:
+        np.array: Array containing the specified data
+    """
     snapdir = glob.glob(output_dir+f"output/groups_*{snapN}")[0]
     snap_files = os.listdir(snapdir)
     
@@ -118,6 +129,17 @@ def get_data_from_fof_folder(output_dir, snapN, param1, param2):
 
 
 def get_data_from_snap_folder(output_dir, snapN, param1, param2):
+    """ function to get data from a specific snapshot folder
+
+    Args:
+        output_dir (string): base directory of the simulation
+        snapN (int): number of the snapshot
+        param1 (string): first parameter in the hdf5 file (i.e. "PartType0")
+        param2 (string): second paramter in the hdf5 file (i.e. "Coordinates")
+
+    Returns:
+        np.array: Array containing the specified data
+    """
     snapdir = glob.glob(output_dir+f"output/snapdir_*{snapN}")[0]
     snap_files = os.listdir(snapdir)
     
@@ -138,6 +160,16 @@ def get_data_from_snap_folder(output_dir, snapN, param1, param2):
 
 
 def get_boxsize(output_dir, snapN):
+    """ gets the boxsize of a specific simulation
+
+    Args:
+        output_dir (string): base directory of the simulation
+        snapN (int): snap number the boxsize should be read out from (as it returns cMpc,
+                    this is not important - just make sure this snap number exists)
+
+    Returns:
+        float: box size in cMpc/h
+    """
     snapdir = glob.glob(output_dir+f"output/snapdir_*{snapN}")[0]
     snap_file = os.listdir(snapdir)[0]
     file_path = snapdir+f"/{snap_file}"
@@ -192,3 +224,31 @@ def custom_hist_z(outpath, snapN, n_bins=100, axis=2):
     bin_edges = np.array(bin_edges)
 
     return bin_masses, bin_edges
+
+
+def load_reference(path, spectrumNs):
+    """load spectra from reference simulation
+
+    Args:
+        path (string): base path to reference simulation folder 
+        spectrumNs (list): List of indices for the spectra.
+
+    Returns:
+        wavelengths (list): one np.array containing the wavelengths of the spectra for each box
+        fluxes (list): len(spectrumNs) number of np.arrays for each box (each is one spectrum)
+        params (list): [Omega0, OmegaBaryon, OmegaLambda, HubbleParam] for each box
+    """
+    path = path + f"data.files/spectra/spectra_reference_point_z1.5_n100d2-fullbox_SDSS-BOSS_HI_combined.hdf5"
+    wavelengths = None
+    fluxes = None
+    
+    with h5py.File(path, "r") as f:     
+        # Zugriff auf einzelne Datasets
+        wavelengths = f["wave"][:]  # Das [:] liest das gesamte Dataset in ein NumPy-Array ein
+        fluxes = f["flux"][:][spectrumNs]
+
+    outdir_path = path + "output/"
+    Omega0, OmegaBaryon, OmegaLambda, HubbleParam = get_cosmo_parameters(outdir_path)
+    params = [Omega0, OmegaBaryon, OmegaLambda, HubbleParam]
+
+    return wavelengths, fluxes, params

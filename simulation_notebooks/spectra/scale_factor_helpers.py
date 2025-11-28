@@ -3,21 +3,52 @@ from scipy.optimize import brentq
 
 
 def a_matter_lambda(t, Omega_m, Omega_Lambda, h):
+    """function for scale factor in matter and lambda dominated universe
+
+    Args:
+        t (float): time at which the scale factor should be computed
+        Omega_m (float): Density parameter for all matter (dark matter and baryonic matter)
+        Omega_Lambda (float): Density parameter for dark energy
+        h (float): hubble parameter 
+
+    Returns:
+        float: scale factor
+    """
     H_0 = 100 * h * 1/(3.086*1e19)  # in 1/s
     a = np.power(Omega_m/Omega_Lambda * np.sinh((3*H_0*np.sqrt(Omega_Lambda)*t)/2)**2 , 1/3)
     return a
 
 
 def t_matter_lambda(a, Omega_m, Omega_Lambda, h):
+    """function for time dependend on scale factor in matter and lambda dominated universe
+
+    Args:
+        a (float): scale factor
+        Omega_m (float): Density parameter for all matter (dark matter and baryonic matter)
+        Omega_Lambda (float): Density parameter for dark energy
+        h (float): hubble parameter 
+
+    Returns:
+        float: time in seconds
+    """
     H_0 = 100 * h * 1/(3.086*1e19)  # in 1/s
     t = 2/(3*H_0*np.sqrt(Omega_Lambda)) * np.arcsinh(np.sqrt(Omega_Lambda/Omega_m * a**3))
     return t
 
 
 def delta_z(d_c, z_start, Omega_m, Omega_Lambda, h):
-    """
-    d_c (float)     : distance in cMpc/h
-    a_start (float) : scale factor of box
+    """compute by how much light traveling through a box with size d_c gets redshifted within that box,
+       if that box sits at redshift z_start
+
+    Args:
+        d_c (float): distance in cMpc/h
+        z_start (float): initial redshift of box
+        Omega_m (float): Density parameter for all matter (dark matter and baryonic matter)
+        Omega_Lambda (float): Density parameter for dark energy
+        h (float): hubble parameter 
+
+    Returns:
+        float: redshift
     """
     a_start = 1/(z_start + 1)
     c = 299792.458  # in km/s
@@ -29,9 +60,18 @@ def delta_z(d_c, z_start, Omega_m, Omega_Lambda, h):
 
 
 def corrected_z(d_c, z_start, Omega_m, Omega_Lambda, h):
-    """
-    d_c (float)     : distance in cMpc/h
-    a_start (float) : scale factor of box
+    """compute by how much light traveling through a box with size d_c gets redshifted in total,
+       if that box sits at redshift z_start 
+
+    Args:
+        d_c (float): distance in cMpc/h
+        z_start (float): initial redshift of box
+        Omega_m (float): Density parameter for all matter (dark matter and baryonic matter)
+        Omega_Lambda (float): Density parameter for dark energy
+        h (float): hubble parameter 
+
+    Returns:
+        float: redshift
     """
     a_start = 1/(z_start + 1)
     c = 299792.458  # in km/s
@@ -43,6 +83,20 @@ def corrected_z(d_c, z_start, Omega_m, Omega_Lambda, h):
 
 
 def t_box_rootfind(t_box, d_c, z_start, Omega_m, Omega_Lambda, h):
+    """function to find root for equation t_box = d_c/c * a(t_2 - t_box). This computes the time it takes light
+      to pass through an expanding box.
+
+    Args:
+        t_box (float): variable to slove for - this is the time the light takes to pass through the box
+        d_c (float): distance in cMpc/h
+        z_start (float): initial redshift of box
+        Omega_m (float): Density parameter for all matter (dark matter and baryonic matter)
+        Omega_Lambda (float): Density parameter for dark energy
+        h (float): hubble parameter 
+
+    Returns:
+        float: should be zero if equation is solved
+    """
     c = 299792.458  # in km/s
     d_c = d_c * 3.086*1e19  # in km
     t_2 = t_matter_lambda(1/(z_start+1), Omega_m, Omega_Lambda, h)
@@ -50,6 +104,19 @@ def t_box_rootfind(t_box, d_c, z_start, Omega_m, Omega_Lambda, h):
 
 
 def solve_for_correct_t_box(d_c, z_start, Omega_m, Omega_Lambda, h):
+    """function to solve the t_box_rootfind equation for the time it takes the light to pass 
+       through an expanding box
+
+    Args:
+        d_c (float): distance in cMpc/h
+        z_start (float): initial redshift of box
+        Omega_m (float): Density parameter for all matter (dark matter and baryonic matter)
+        Omega_Lambda (float): Density parameter for dark energy
+        h (float): hubble parameter 
+
+    Returns:
+        float: time in seconds it takes light to pass through the box
+    """
     c = 299792.458  # in km/s
     d_c_correct = d_c/h
     t_start = d_c_correct/(c*(z_start+1)) *10**6 *3.086*10**13  # in s
@@ -60,6 +127,19 @@ def solve_for_correct_t_box(d_c, z_start, Omega_m, Omega_Lambda, h):
 
 
 def corrected_z_exact(d_c, z_start, Omega_m, Omega_Lambda, h):
+    """compute by how much light traveling through a box with size d_c gets redshifted in total,
+       if that box sits at redshift z_start. Now also including the physical expansion of the box
+
+    Args:
+        d_c (float): distance in cMpc/h
+        z_start (float): initial redshift of box
+        Omega_m (float): Density parameter for all matter (dark matter and baryonic matter)
+        Omega_Lambda (float): Density parameter for dark energy
+        h (float): hubble parameter 
+
+    Returns:
+        float: redshift
+    """
 
     t_2 = t_matter_lambda(1/(z_start+1), Omega_m, Omega_Lambda, h)
 
