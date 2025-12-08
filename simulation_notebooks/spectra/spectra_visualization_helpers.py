@@ -5,21 +5,22 @@ import os
 from scale_factor_helpers import *
 
 
-def load_spectra_from_boxes(gp_paths, spectrumNums):
+def load_spectra_from_boxes(gp_paths, spectrumNums, y_param="flux"):
     """ Loads all spectra specified in spectrumNums for all boxes specified in gp_paths
 
     Args:
         gp_paths (list): List of Gridpoint folder paths to load spectra from.
         spectrumNums (list): List of indices for the spectra.
+        y_param (str, optional): name of field to return data from. Defaults to 'flux'.
 
     Returns:
         wavelengths (list): one np.array containing the wavelengths of the spectra for each box
-        fluxes (list): len(spectrumNums) number of np.arrays for each box (each is one spectrum)
+        y_param (list): len(spectrumNums) number of np.arrays for each box (each is one spectrum)
         params (list): [Omega0, OmegaBaryon, OmegaLambda, HubbleParam] for each box
     """
     
     wavelengths = []
-    fluxes = []
+    y_out = []
     params = []
     
     for gp_path in gp_paths:
@@ -29,14 +30,14 @@ def load_spectra_from_boxes(gp_paths, spectrumNums):
         with h5py.File(path, "r") as f:     
             # Zugriff auf einzelne Datasets
             wavelengths.append(f["wave"][:])  # Das [:] liest das gesamte Dataset in ein NumPy-Array ein
-            fluxes.append(f["flux"][:][spectrumNums])
+            y_out.append(f[y_param][:][spectrumNums])
 
         outdir_path = gp_path + "output/"
         Omega0, OmegaBaryon, OmegaLambda, HubbleParam = get_cosmo_parameters(outdir_path)
 
         params.append([Omega0, OmegaBaryon, OmegaLambda, HubbleParam])
 
-    return wavelengths, fluxes, params
+    return wavelengths, y_out, params
 
 
 def get_cosmo_parameters(basepath):
