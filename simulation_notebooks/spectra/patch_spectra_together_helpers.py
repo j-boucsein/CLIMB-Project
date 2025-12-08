@@ -85,7 +85,6 @@ def patch_spectra_together(gp_path, spectra_to_augment, min_wavelength, max_wave
     # calculate how many spectra to augment to the left and right
     spectra_to_add_to_left = int((left_edge - min_wavelength)/spectrum_width)+1  # int() truncates floats, so add 1 to make sure the full range is filled with spectra
     spectra_to_add_to_right = int((max_wavelength - right_edge)/spectrum_width)+1 # int() truncates floats, so add 1 to make sure the full range is filled with spectra
-    print("spectra to add to left, right", spectra_to_add_to_left, spectra_to_add_to_right)
 
     number_of_augmentation_spectra = spectra_to_add_to_left + spectra_to_add_to_right
 
@@ -101,10 +100,6 @@ def patch_spectra_together(gp_path, spectra_to_augment, min_wavelength, max_wave
             augmentation_spectra_right = []
         else:
             augmentation_spectra_right = augmentation_spectra_numbers[-spectra_to_add_to_right:]
-
-
-        print("base spec", spectrum_to_augment_number)
-        print("aug spec left, right", augmentation_spectra_left, augmentation_spectra_right)
 
         plot_infos.append([*list(reversed(augmentation_spectra_left)), spectrum_to_augment_number, *augmentation_spectra_right])  # for plotting purposes only
 
