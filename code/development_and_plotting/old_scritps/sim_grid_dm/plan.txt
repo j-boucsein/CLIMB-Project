@@ -1,0 +1,26 @@
+Logical Structure:
+
+1. Make a new directory for the simulation (with the specific cosmological parameters) - what would be a usefull naming convention?
+2. Copy the template directory into the new directory
+3. Copy Arepo executable into direcotry
+4. Copy Music executable into directory
+5. Edit param.txt
+6. Edit param_music.txt
+7. Execute Music (with a custom_creape.py) to make the new ICs
+8. Submit SLURM job to run arepo
+
+
+TODOs:
++ build arepo that should be used and put it somewhere so i can easily copy it every time (does it need any other files or dicts except the bin executable?)
++ make a music version that should be used and put is somewhere. Same as arepo
++ write ic_creation.py to create the ICs (maybe i dont actually need this - and can just call music with the param_music.txt in the shell script?)
++ write custom slurm script (72 tasks, 4 nodes)
++ choose reasonable values for the template param.txt and param_musc.txt (at least for the parameters that i will not vary)
++ create a grid for my parameters (write short python script - can later be swapped with latin hypercube sampling)
++ write the shell script described above
++ run shell script and pray
+
+- run automated evaluation script on the simulations that calculates benchmark values (i.e. slope of halo mass function power law, scale factor against physical time, ...)
+
+- ! In param_music.txt Omega_b cannot be set to zero -> for purely dm sims the ICs are always a bit wrong?? Not sure why Omega_b=0 fails the ic creation...
+

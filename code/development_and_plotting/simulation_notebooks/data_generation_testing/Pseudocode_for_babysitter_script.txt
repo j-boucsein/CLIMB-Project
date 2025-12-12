@@ -1,0 +1,22 @@
+Pseudocode for the babysitter script:
+
+Initialize loop:
+1. create output dir on ptmp and create run dir
+2. copy Arepo, param.txt, param_musics.txt, cusom_create.py, slurm_script.slurm into run dir
+3. check if everything is really there
+5. edit param.txt and param_musics.txt to match grid point and edit output dir 
+6. check if the edit worked
+4. run custom_create.py 
+5. check if ics file was successfully created [and check in param_musics.txt_log.txt if correct params were used]
+6. edit slurm script (set name of this simulation)
+7. submit job with sbatch slurm_script.slurm and save job id to file
+
+Check up loop (for every job):
+1. check status of job and see if still running
+ -> if job is complete, check if all expected snapdirs are there - if not, then check job error file and print
+ -> if job is not running anymore, check if job error file has content 
+  -> if so, then save job id and grid values and errormessage and put this into a file or sth
+  -> if not, then check for restart files
+   -> If restart files exist, then restart the simulation and save the new job id to the job id file
+
+2. give short summary of status - how many are done, stopped, restarted and failed somehow
