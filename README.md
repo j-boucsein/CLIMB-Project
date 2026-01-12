@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="assets/CLIMB_PROJECT_banner.png" alt="Banner" width="100%">
-</p>
-
 # The CLIMB Project
 [<u>**C**</u>osmological <u>**L**</u>ambdaCDM Simulations for <u>**I**</u>nference with <u>**M**</u>achine Learning and <u>**B**</u>ayesian statistics]
 
