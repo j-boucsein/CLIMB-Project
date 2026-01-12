@@ -1,5 +1,4 @@
 import numpy as np
-import matplotlib.pyplot as plt
 import torch
 from torch.utils.data import DataLoader, Dataset
 import csv
@@ -18,12 +17,29 @@ from first_tranformer_test import *
 
 
 def write_to_log_file(file_path, message, mode="a"):
+    """Function to write content to the log file
+
+    Args:
+        file_path (string): path to the log file
+        message (string): message to write to the log file
+        mode (str, optional): Mode of opening the file. Defaults to "a".
+    """
     with open(file_path, mode) as file:
         file.write(message)
         file.write("\n")
 
 
 def build_dataset_for_gridpoints(gridpoints, suite_to_use):
+    """Collects the Flux data from the gridpoint spectra files and returns them as X and y data np.arrays
+
+    Args:
+        gridpoints (list): list with the grid point numbers to use
+        suite_to_use (string): simulation suite to use
+
+    Returns:
+        np.array(X): Array of spectra (flux values)
+        np.array(y): Array of cosmo parameters (for each spectrum)
+    """
     X, y = [], []
 
     for i in gridpoints:
@@ -44,6 +60,8 @@ def build_dataset_for_gridpoints(gridpoints, suite_to_use):
 
 
 class SpectraCosmoDataset(Dataset):
+    """Class that defines a custom dataset for the spectra data
+    """
     def __init__(self, X, y, dtype=torch.float32):
         self.X = torch.tensor(X, dtype=dtype)
         self.y = torch.tensor(y, dtype=dtype)
@@ -56,11 +74,31 @@ class SpectraCosmoDataset(Dataset):
     
 
 def _normalize(dataset, X_mean, X_std, y_mean, y_std):
-        dataset.X = (dataset.X - X_mean) / X_std
-        dataset.y = (dataset.y - y_mean) / y_std
+    """Normalize the given dataset using the other given parameters
+
+    Args:
+        dataset (torch.utils.data.Dataset): dataset to be normalized
+        X_mean (float): mean of the training X data
+        X_std (_type_): std of the training X data
+        y_mean (_type_): mean of the training y data
+        y_std (_type_): std of the training y data
+    """
+    dataset.X = (dataset.X - X_mean) / X_std
+    dataset.y = (dataset.y - y_mean) / y_std
 
 
 def get_datasets(suite_to_use, log_file_path):
+    """Split the gridpoints into training, test and eval and then collect the datasets and normalize them
+
+    Args:
+        suite_to_use (string): simulation suite to use
+        log_file_path (string): path to the log file
+
+    Returns:
+        train_dataset (SpectraCosmoDataset): training dataset
+        test_dataset (SpectraCosmoDataset): test dataset
+        eval_dataset (SpectraCosmoDataset): evaluation dataset
+    """
     
     write_to_log_file(log_file_path, "")
     write_to_log_file(log_file_path, "Collecting datasets")
@@ -115,6 +153,18 @@ def get_datasets(suite_to_use, log_file_path):
 
 
 def train_one_epoch(model, loader, optimizer, criterion, device):
+    """train the model for one epoch
+
+    Args:
+        model (Transformer): the transformer model to train
+        loader (torch.utils.data.DataLoader): the dataloader for the training data
+        optimizer (torch.optim.Optimizer): the optimizer
+        criterion (torch.nn.Loss_function): the loss function
+        device (torch.device): device to train on
+
+    Returns:
+        float: the avarage loss over this epoch
+    """
     model.train()
 
     total_loss = 0.0
@@ -136,6 +186,18 @@ def train_one_epoch(model, loader, optimizer, criterion, device):
 
 
 def eval_model(model, loader, criterion, device):
+    """evaluate the model
+
+    Args:
+        model (Transformer): the transformer model to evaluate
+        loader (torch.utils.data.DataLoader): the dataloader for the evaluation data
+        optimizer (torch.optim.Optimizer): the optimizer
+        criterion (torch.nn.Loss_function): the loss function
+        device (torch.device): device to do inference on
+
+    Returns:
+        float: the avarage loss over all data batches
+    """
     model.eval()
 
     total_loss = 0.0
@@ -154,13 +216,20 @@ def eval_model(model, loader, criterion, device):
 
 
 def write_loss_to_file(file_path, train_loss, eval_loss, mode="a"):
+    """write training loss and evaluation loss to a file
+
+    Args:
+        file_path (string): path to the file
+        train_loss (float): training loss
+        eval_loss (float): evaluation loss
+        mode (str, optional): Mode to open file in. Defaults to "a".
+    """
     with open(file_path, mode) as file:
         writer = csv.writer(file, delimiter=',',)
         writer.writerow([train_loss, eval_loss])
 
 
 def main():
-
     suite_to_use = "L25n256_suite"
     batch_size = 256
     n_epochs = 5
