@@ -51,8 +51,8 @@ def make_training_spectra_one_box(gridpoint_path, outfile_path, n_spectra, snr,
     # collect the metadata for the file
     Omega0, OmegaBaryon, OmegaLambda, HubbleParam = get_cosmo_parameters(gridpoint_path)  # TODO: change the get method to take in gp path
 
-    boxsize = get_data_from_header(gridpoint_path, 0, "BoxSize")*1e-3  # convert to Mpc/h
-    redshift = get_data_from_header(gridpoint_path, 0, "Redshift")
+    boxsize = get_data_from_header(gridpoint_path, 3, "BoxSize")*1e-3  # convert to Mpc/h
+    redshift = get_data_from_header(gridpoint_path, 3, "Redshift")
 
     metadata_file = {
         "Omega0": Omega0,
@@ -71,16 +71,16 @@ def make_training_spectra_one_box(gridpoint_path, outfile_path, n_spectra, snr,
 
 
 def main():
-    suite_to_use = "L25n128_suite_var"
+    suite_to_use = "L25n256_suite"
     gps_to_use = [i for i in range(50)]
 
     for i in gps_to_use:
         print(f"starting gp {i}")
         gp_path = f"/vera/ptmp/gc/jerbo/{suite_to_use}/gridpoint{i}/"
-        out_file_path = f"/vera/ptmp/gc/jerbo/training_data/{suite_to_use}/gp{i}_spectra.hdf5"
+        out_file_path = f"/vera/ptmp/gc/jerbo/training_data/{suite_to_use}_no_noise/gp{i}_spectra.hdf5"
 
         n_spectra_to_make = 10000
-        snr=0.1
+        snr=0
         min_w = 3550
         max_w = 3950
         noise_random_distr = "normal"
