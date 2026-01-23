@@ -4,6 +4,7 @@ from torch.utils.data import DataLoader, Dataset
 import csv
 import time
 import yaml
+import matplotlib.pyplot as plt
 
 import sys, os
 # This is not super pretty, but I think this is the best way to import stuff from ../../../util?
@@ -47,11 +48,10 @@ def build_dataset_for_gridpoints(gridpoints, suite_to_use, suite_of_spectra):
         path_to_file = f"/vera/ptmp/gc/jerbo/training_data/{suite_of_spectra}/gp{i}_spectra.hdf5"
         spec_file = SpectraCustomHDF5(path_to_file)
         _, flux = spec_file.get_all_spectra()  
-        flux = flux[:1000]  # (1000, 468) TODO: delete this line for training with the full dataset
+        # flux = flux[:1000]  # (1000, 468) TODO: delete this line for training with the full dataset
 
-        params = get_cosmo_parameters(
-            f"/vera/ptmp/gc/jerbo/{suite_to_use}/gridpoint{i}/"
-        )
+        metadata = spec_file.get_header()
+        params = metadata["Omega0"], metadata["OmegaBaryon"], metadata["OmegaLambda"], metadata["HubbleParam"]
 
         for spec in flux:
             X.append(spec)
@@ -106,7 +106,7 @@ def get_datasets(suite_to_use, suite_of_spectra, log_file_path):
 
     ################# Make random list of gridpoints for train, eval and test sets #################
     index_list = np.array(list(range(50)))
-    np.random.seed(42)
+    np.random.seed(123)
     np.random.shuffle(index_list)
 
     n_train = int(0.7 * len(index_list))
@@ -150,7 +150,7 @@ def get_datasets(suite_to_use, suite_of_spectra, log_file_path):
     write_to_log_file(log_file_path, f"Created testing dataset with {test_dataset.X.size()=}, {test_dataset.y.size()=}")
     write_to_log_file(log_file_path, "")
 
-    return train_dataset, test_dataset, eval_dataset
+    return train_dataset, test_dataset, eval_dataset, y_mean, y_std
 
 
 def train_one_epoch(model, loader, optimizer, criterion, device, log_file_path):
@@ -273,7 +273,99 @@ def get_datasets_shuffle_over_gps(suite_to_use, suite_of_spectra, log_file_path)
     _normalize(eval_dataset, X_mean, X_std, y_mean, y_std)
     _normalize(test_dataset, X_mean, X_std, y_mean, y_std)
 
-    return train_dataset, eval_dataset, test_dataset
+    return train_dataset, eval_dataset, test_dataset, y_mean, y_std
+
+
+def plot_loss_curve(train_loss_path, model_name):
+    
+    with open(train_loss_path, "r") as file:
+        reader = csv.reader(file)
+        loss_plot = [i for i in reader][1:]
+
+    train_loss, eval_loss = [list(map(float, col)) for col in zip(*loss_plot)]
+
+    plt.plot([i for i in range(len(train_loss))], train_loss, label="train loss")
+    plt.plot([i for i in range(len(eval_loss))], eval_loss, label="validation loss")
+
+    plt.ylabel("MSE Loss")
+    plt.xlabel("Number of epochs")
+    plt.legend()
+    plt.title(f"Transformer '{model_name}' - Loss curve")
+
+    plt.savefig(f"plots/{model_name}_losscurve.pdf", format="PDF")
+
+
+def eval_model_plots(model, loader, criterion, device):
+    all_preds = []
+    all_targets = []
+    model.eval()
+
+    total_loss = []
+    with torch.no_grad():
+        for X, y in loader:
+            X = X.to(device, non_blocking=True)
+            y = y.to(device, non_blocking=True)
+
+            y_pred = model(X)
+            loss = criterion(y_pred, y)
+
+            total_loss.append(loss.item())
+
+            all_preds.append(y_pred)
+            all_targets.append(y)
+
+        all_preds = torch.cat(all_preds, dim=0)
+        all_targets = torch.cat(all_targets, dim=0)
+    
+    avarage_loss = np.array(total_loss).mean()
+    return avarage_loss, all_targets, all_preds
+
+
+def inference_plot(y_true, y_pred, model_name):
+    params = ["Omega_m", "Omega_b", "Omega_L", "H0"]
+
+    y_true_by_param = [y_true[:, i] for i in range(len(params))]
+    y_pred_by_param = [y_pred[:, i] for i in range(len(params))]
+
+    fig, axs = plt.subplots(2, 2, figsize=(7, 7))
+
+    for index in range(4):
+
+        y_true_par = y_true_by_param[index]
+        y_pred_par = y_pred_by_param[index]
+
+        y_pred_mean_par = []
+        y_pred_std_par = []
+        y_true_unique_par = []
+        y_pred_per_unique_value = []
+        for true_value in set(y_true_par):
+            y_pred_this_true_value = y_pred_par[y_true_par == true_value]
+            mean_this_true_value = y_pred_this_true_value.mean()
+            std_this_true_value = y_pred_this_true_value.std()
+
+            y_pred_std_par.append(std_this_true_value)
+            y_pred_mean_par.append(mean_this_true_value)
+            y_true_unique_par.append(true_value)
+
+            y_pred_per_unique_value.append(y_pred_this_true_value)
+
+        ax = axs[index%2, index//2]
+
+        ax.plot(sorted(y_true_par), sorted(y_true_par), linestyle="--", c="red", alpha=0.7, zorder=2)
+
+        ax.scatter(y_true_par, y_pred_par, alpha=0.5, c="lightgrey", zorder=1, label="inference points")
+        ax.errorbar(y_true_unique_par, y_pred_mean_par, yerr=y_pred_std_par, linestyle="None", marker="x", color="black", zorder=3, label=r"mean with 1 $\sigma$ std")
+        #plt.scatter(y_true_unique_Om, [y_pred_mean_Om[i]+y_pred_std_Om[i] for i in range(len(y_true_unique_Om))], linestyle="None", marker="o", color="red")
+        #plt.scatter(y_true_unique_Om, [y_pred_mean_Om[i]-y_pred_std_Om[i] for i in range(len(y_true_unique_Om))], linestyle="None", marker="o", color="red")
+        
+        ax.set_title(f"{params[index]}")
+        ax.legend(prop={'size': 8})
+        #ax.set_xticks(sorted(y_true_unique_par))
+        #ax.set_xticklabels([f"{x:.2f}" for x in y_true_unique_par])
+
+    plt.tight_layout()
+    plt.savefig(f"plots/{model_name}_inference.pdf", format="PDF")
+
 
 
 def main():
@@ -318,7 +410,7 @@ def main():
     write_to_log_file(log_file_path, f"Using device: {device}")
 
     # get the datasets
-    train_dataset, eval_dataset, test_dataset = get_datasets_shuffle_over_gps(suite_to_use, suite_of_spectra, log_file_path)
+    train_dataset, eval_dataset, test_dataset, y_mean, y_std = get_datasets(suite_to_use, suite_of_spectra, log_file_path)
 
     # make the dataloaders
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, pin_memory=True)
@@ -379,6 +471,24 @@ def main():
     write_to_log_file(log_file_path, f"Finished training, saving model state to {path_to_model_states+state_name}")
     torch.save(model.state_dict(), path_to_model_states+state_name)
     write_to_log_file(log_file_path, "Done!")
+
+    write_to_log_file(log_file_path, "\n\nMaking Plots...")
+    plot_loss_curve(train_eval_loss_path, model_name)
+    write_to_log_file(log_file_path, "Saved loss curve plot")
+
+    write_to_log_file(log_file_path, "")
+    write_to_log_file(log_file_path, "Starting evaluation on test set")
+    test_loss, y_test_true, y_test_pred = eval_model_plots(model, test_loader, criterion, device)
+
+    y_test_true, y_test_pred  = y_test_true.to(torch.device("cpu"))*y_std + y_mean, y_test_pred.to(torch.device("cpu"))*y_std + y_mean
+    y_true, y_pred = y_test_true.numpy(), y_test_pred.numpy()
+
+    inference_plot(y_true, y_pred, model_name)
+    write_to_log_file(log_file_path, "Done with inference on test set")
+    write_to_log_file(log_file_path, f"Final Test loss: {test_loss:.2e}")
+    write_to_log_file(log_file_path, "Saved inference plot")
+
+    write_to_log_file(log_file_path, "-------------- DONE --------------")
 
 
 if __name__ == "__main__":
