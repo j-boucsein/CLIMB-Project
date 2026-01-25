@@ -31,7 +31,7 @@ def write_to_log_file(file_path, message, mode="a"):
         file.write("\n")
 
 
-def build_dataset_for_gridpoints(gridpoints, suite_to_use, suite_of_spectra):
+def build_dataset_for_gridpoints(gridpoints, suite_of_spectra, shuffle_and_split_type=None):
     """Collects the Flux data from the gridpoint spectra files and returns them as X and y data np.arrays
 
     Args:
@@ -45,10 +45,13 @@ def build_dataset_for_gridpoints(gridpoints, suite_to_use, suite_of_spectra):
     X, y = [], []
 
     for i in gridpoints:
-        path_to_file = f"/vera/ptmp/gc/jerbo/training_data/{suite_of_spectra}/gp{i}_spectra.hdf5"
+        if shuffle_and_split_type is None:
+            path_to_file = f"/vera/ptmp/gc/jerbo/training_data/{suite_of_spectra}/gp{i}_spectra.hdf5"
+        else:
+            path_to_file = f"/vera/ptmp/gc/jerbo/training_data/{suite_of_spectra}/gp{i}_spectra_{shuffle_and_split_type}.hdf5"
         spec_file = SpectraCustomHDF5(path_to_file)
         _, flux = spec_file.get_all_spectra()  
-        # flux = flux[:1000]  # (1000, 468) TODO: delete this line for training with the full dataset
+        flux = flux[:1000]  # (1000, 468) TODO: delete this line for training with the full dataset
 
         metadata = spec_file.get_header()
         params = metadata["Omega0"], metadata["OmegaBaryon"], metadata["OmegaLambda"], metadata["HubbleParam"]
@@ -88,7 +91,7 @@ def _normalize(dataset, X_mean, X_std, y_mean, y_std):
     dataset.y = (dataset.y - y_mean) / y_std
 
 
-def get_datasets(suite_to_use, suite_of_spectra, log_file_path):
+def get_datasets(suite_of_spectra, log_file_path):
     """Split the gridpoints into training, test and eval and then collect the datasets and normalize them
 
     Args:
@@ -118,9 +121,9 @@ def get_datasets(suite_to_use, suite_of_spectra, log_file_path):
 
     ################ Make the datasets #####################
 
-    X_train, y_train = build_dataset_for_gridpoints(train_gps, suite_to_use, suite_of_spectra)
-    X_eval,  y_eval  = build_dataset_for_gridpoints(eval_gps,  suite_to_use, suite_of_spectra)
-    X_test,  y_test  = build_dataset_for_gridpoints(test_gps,  suite_to_use, suite_of_spectra)
+    X_train, y_train = build_dataset_for_gridpoints(train_gps, suite_of_spectra)
+    X_eval,  y_eval  = build_dataset_for_gridpoints(eval_gps, suite_of_spectra)
+    X_test,  y_test  = build_dataset_for_gridpoints(test_gps, suite_of_spectra)
 
     train_dataset = SpectraCosmoDataset(X_train, y_train)
     eval_dataset  = SpectraCosmoDataset(X_eval,  y_eval)
@@ -233,12 +236,12 @@ def write_loss_to_file(file_path, train_loss, eval_loss, mode="a"):
         writer.writerow([train_loss, eval_loss])
 
 
-def get_datasets_shuffle_over_gps(suite_to_use, suite_of_spectra, log_file_path):
+def get_datasets_shuffle_over_gps(suite_of_spectra, log_file_path):
     """ This function is for debugging purposes only
     """
     gps_list = [i for i in range(50)]
 
-    X_all, y_all = build_dataset_for_gridpoints(gps_list, suite_to_use, suite_of_spectra)
+    X_all, y_all = build_dataset_for_gridpoints(gps_list, suite_of_spectra)
 
     print(X_all.shape[0])
 
@@ -353,7 +356,7 @@ def inference_plot(y_true, y_pred, model_name):
 
         ax.plot(sorted(y_true_par), sorted(y_true_par), linestyle="--", c="red", alpha=0.7, zorder=2)
 
-        ax.scatter(y_true_par, y_pred_par, alpha=0.5, c="lightgrey", zorder=1, label="inference points")
+        ax.scatter(y_true_par, y_pred_par, alpha=0.5, c="lightgrey", zorder=1, label="inference points", rasterized=True)
         ax.errorbar(y_true_unique_par, y_pred_mean_par, yerr=y_pred_std_par, linestyle="None", marker="x", color="black", zorder=3, label=r"mean with 1 $\sigma$ std")
         #plt.scatter(y_true_unique_Om, [y_pred_mean_Om[i]+y_pred_std_Om[i] for i in range(len(y_true_unique_Om))], linestyle="None", marker="o", color="red")
         #plt.scatter(y_true_unique_Om, [y_pred_mean_Om[i]-y_pred_std_Om[i] for i in range(len(y_true_unique_Om))], linestyle="None", marker="o", color="red")
@@ -367,13 +370,103 @@ def inference_plot(y_true, y_pred, model_name):
     plt.savefig(f"plots/{model_name}_inference.pdf", format="PDF")
 
 
+def save_test_inference(y_true, y_pred, model_name):
+    
+    file_path = f"test_inference_files/{model_name}_testset_inference.csv"
+    with open(file_path, "w") as file:
+        writer = csv.writer(file, delimiter=',',)
+        for i in range(len(y_true)):
+            writer.writerow([y_true[i], y_pred[i]])
+
+
+def get_mock_datasets(suite_of_spectra, log_file_path):
+
+    write_to_log_file(log_file_path, "")
+    write_to_log_file(log_file_path, "Collecting datasets using mock function")
+
+    ################# Make random list of gridpoints for train, eval and test sets #################
+    index_list = np.array(list(range(100)))
+    np.random.seed(123)
+    np.random.shuffle(index_list)
+
+    n_train = int(0.5 * len(index_list))
+
+    train_gps = index_list[:n_train]
+    eval_gps  = index_list[n_train:]
+    test_gps  = index_list[n_train:]
+
+    ################ Make the datasets #####################
+
+    X_train, y_train = build_dataset_for_gridpoints(train_gps, suite_of_spectra)
+    X_eval,  y_eval  = build_dataset_for_gridpoints(eval_gps, suite_of_spectra)
+    X_test,  y_test  = build_dataset_for_gridpoints(test_gps, suite_of_spectra)
+
+    train_dataset = SpectraCosmoDataset(X_train, y_train)
+    eval_dataset  = SpectraCosmoDataset(X_eval,  y_eval)
+    test_dataset  = SpectraCosmoDataset(X_test,  y_test)
+
+    ############### Standardize the data ####################
+
+    X_mean = train_dataset.X.mean(dim=0)
+    X_std  = train_dataset.X.std(dim=0) + 1e-8
+
+    y_mean = train_dataset.y.mean(dim=0)
+    y_std  = train_dataset.y.std(dim=0) + 1e-8
+
+    _normalize(train_dataset, X_mean, X_std, y_mean, y_std)
+    _normalize(eval_dataset, X_mean, X_std, y_mean, y_std)
+    _normalize(test_dataset, X_mean, X_std, y_mean, y_std)
+
+    ############## Test if there is no information leakege between datasets ##############
+
+    write_to_log_file(log_file_path, f"Created training dataset with {train_dataset.X.size()=}, {train_dataset.y.size()=}")
+    write_to_log_file(log_file_path, f"Created evaluation dataset with {eval_dataset.X.size()=}, {eval_dataset.y.size()=}")
+    write_to_log_file(log_file_path, f"Created testing dataset with {test_dataset.X.size()=}, {test_dataset.y.size()=}")
+    write_to_log_file(log_file_path, "")
+
+    return train_dataset, test_dataset, eval_dataset, y_mean, y_std
+
+
+def get_shuffled_and_split_datasets(suite_of_spectra, log_file_path):
+
+    write_to_log_file(log_file_path, "")
+    write_to_log_file(log_file_path, "Collecting datasets using shuffled_and_split function")
+
+    gps_list = [i for i in range(50)]
+
+    X_train, y_train = build_dataset_for_gridpoints(gps_list, suite_of_spectra, "train")
+    X_eval, y_eval = build_dataset_for_gridpoints(gps_list, suite_of_spectra, "eval")
+    X_test, y_test = build_dataset_for_gridpoints(gps_list, suite_of_spectra, "test")
+
+    train_dataset = SpectraCosmoDataset(X_train, y_train)
+    eval_dataset  = SpectraCosmoDataset(X_eval,  y_eval)
+    test_dataset  = SpectraCosmoDataset(X_test,  y_test)
+
+    X_mean = train_dataset.X.mean(dim=0)
+    X_std  = train_dataset.X.std(dim=0) + 1e-8
+
+    y_mean = train_dataset.y.mean(dim=0)
+    y_std  = train_dataset.y.std(dim=0) + 1e-8
+
+    _normalize(train_dataset, X_mean, X_std, y_mean, y_std)
+    _normalize(eval_dataset, X_mean, X_std, y_mean, y_std)
+    _normalize(test_dataset, X_mean, X_std, y_mean, y_std)
+
+    write_to_log_file(log_file_path, f"Created training dataset with {train_dataset.X.size()=}, {train_dataset.y.size()=}")
+    write_to_log_file(log_file_path, f"Created evaluation dataset with {eval_dataset.X.size()=}, {eval_dataset.y.size()=}")
+    write_to_log_file(log_file_path, f"Created testing dataset with {test_dataset.X.size()=}, {test_dataset.y.size()=}")
+    write_to_log_file(log_file_path, "")
+
+    return train_dataset, eval_dataset, test_dataset, y_mean, y_std
+
+
 
 def main():
     # read out the config file
     with open("config.yaml") as f:
         params = yaml.safe_load(f)
 
-    suite_to_use = params['suite_to_use']
+    dataset_function_name = params['dataset_collection_fucntion']
     suite_of_spectra = params['suite_of_spectra']
     batch_size = params['batch_size']
     n_epochs = params['n_epochs']
@@ -395,6 +488,19 @@ def main():
     log_file_path = f"log_files/{model_name}_log.txt"
     yaml_config_save_path = f"log_files/{model_name}_config.yaml"
 
+    dataset_function = None
+    # set which dataset collection function to use
+    if dataset_function_name == "shuffled":
+        dataset_function = get_datasets_shuffle_over_gps
+    elif dataset_function_name == "split":
+        dataset_function = get_datasets
+    elif dataset_function_name == "mock":
+        dataset_function = get_mock_datasets
+    elif dataset_function_name == "shuffled_and_split":
+        dataset_function = get_shuffled_and_split_datasets
+
+    assert dataset_function is not None, "invalid dataset function name was given in config file"
+
     # save the config file as part of the logging
     with open(yaml_config_save_path, "w") as f:
         yaml.safe_dump(params, f, sort_keys=False)
@@ -410,7 +516,7 @@ def main():
     write_to_log_file(log_file_path, f"Using device: {device}")
 
     # get the datasets
-    train_dataset, eval_dataset, test_dataset, y_mean, y_std = get_datasets(suite_to_use, suite_of_spectra, log_file_path)
+    train_dataset, eval_dataset, test_dataset, y_mean, y_std = dataset_function(suite_of_spectra, log_file_path)
 
     # make the dataloaders
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, pin_memory=True)
@@ -482,6 +588,8 @@ def main():
 
     y_test_true, y_test_pred  = y_test_true.to(torch.device("cpu"))*y_std + y_mean, y_test_pred.to(torch.device("cpu"))*y_std + y_mean
     y_true, y_pred = y_test_true.numpy(), y_test_pred.numpy()
+
+    save_test_inference(y_true, y_pred, model_name)
 
     inference_plot(y_true, y_pred, model_name)
     write_to_log_file(log_file_path, "Done with inference on test set")
