@@ -48,9 +48,9 @@ ax.plot_surface(A, B, C, alpha=0.4, color='gray', rstride=1, cstride=1, edgecolo
 ax.set_xlabel(r'$\Omega_m$')
 ax.set_ylabel(r'$\Omega_b$')
 ax.set_zlabel(r'$\Omega_\Lambda$')
-ax.set_title(r'Latin Hypercube Sampling with constraint'
-             r' of $\Omega_m$+$\Omega_\Lambda$=1 $\wedge$ $\Omega_m \geq \Omega_b$' + '\n'
-             r'and $\Omega_m$ $\in$ [0.1, 0.5], $\Omega_b$ $\in$ [0.001, 0.2], $\Omega_\Lambda$ $\in$ [0.5, 0.9]')
+#ax.set_title(r'Latin Hypercube Sampling with constraint'
+#             r' of $\Omega_m$+$\Omega_\Lambda$=1 $\wedge$ $\Omega_m \geq \Omega_b$' + '\n'
+#             r'and $\Omega_m$ $\in$ [0.1, 0.5], $\Omega_b$ $\in$ [0.001, 0.2], $\Omega_\Lambda$ $\in$ [0.5, 0.9]')
 
 # Achsengrenzen
 ax.set_xlim(0, 0.6)
