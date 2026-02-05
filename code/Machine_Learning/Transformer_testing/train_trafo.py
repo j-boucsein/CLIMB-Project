@@ -361,6 +361,8 @@ def inference_plot(y_true, y_pred, model_name):
         #plt.scatter(y_true_unique_Om, [y_pred_mean_Om[i]+y_pred_std_Om[i] for i in range(len(y_true_unique_Om))], linestyle="None", marker="o", color="red")
         #plt.scatter(y_true_unique_Om, [y_pred_mean_Om[i]-y_pred_std_Om[i] for i in range(len(y_true_unique_Om))], linestyle="None", marker="o", color="red")
         
+        ax.set_xlabel("true")
+        ax.set_ylabel("pred")
         ax.set_title(f"{params[index]}")
         ax.legend(prop={'size': 8})
         #ax.set_xticks(sorted(y_true_unique_par))
@@ -460,6 +462,59 @@ def get_shuffled_and_split_datasets(suite_of_spectra, log_file_path):
     return train_dataset, eval_dataset, test_dataset, y_mean, y_std
 
 
+def get_2nd_try_helper(base_path):
+    files = os.listdir(base_path)
+    sp_paths = [base_path + i for i in files]
+    print(sp_paths)
+
+    X, y = [], []
+    for this_file in sp_paths:
+        spec_file = SpectraCustomHDF5(this_file)
+        _, flux = spec_file.get_all_spectra()
+        metadata = spec_file.get_header()
+        params = metadata["Omega0"], metadata["OmegaBaryon"], metadata["OmegaLambda"], metadata["HubbleParam"]
+
+        for spec in flux:
+            X.append(spec)
+            y.append(params)
+    
+    return np.array(X), np.array(y)
+
+
+def get_2nd_try_dataset(suite_of_spectra, log_file_path):
+    write_to_log_file(log_file_path, "")
+    write_to_log_file(log_file_path, "Collecting datasets using 2nd try function")
+
+    train_path = f"/vera/ptmp/gc/jerbo/training_data/{suite_of_spectra}/train_datasets/"
+    eval_path = f"/vera/ptmp/gc/jerbo/training_data/{suite_of_spectra}/eval_datasets/"
+    test_path = f"/vera/ptmp/gc/jerbo/training_data/{suite_of_spectra}/test_datasets/"
+
+    X_train, y_train = get_2nd_try_helper(train_path)
+    X_eval, y_eval = get_2nd_try_helper(eval_path)
+    X_test, y_test = get_2nd_try_helper(test_path)
+
+    train_dataset = SpectraCosmoDataset(X_train, y_train)
+    eval_dataset  = SpectraCosmoDataset(X_eval,  y_eval)
+    test_dataset  = SpectraCosmoDataset(X_test,  y_test)
+
+    X_mean = train_dataset.X.mean(dim=0)
+    X_std  = train_dataset.X.std(dim=0) + 1e-8
+
+    y_mean = train_dataset.y.mean(dim=0)
+    y_std  = train_dataset.y.std(dim=0) + 1e-8
+
+    _normalize(train_dataset, X_mean, X_std, y_mean, y_std)
+    _normalize(eval_dataset, X_mean, X_std, y_mean, y_std)
+    _normalize(test_dataset, X_mean, X_std, y_mean, y_std)
+
+    write_to_log_file(log_file_path, f"Created training dataset with {train_dataset.X.size()=}, {train_dataset.y.size()=}")
+    write_to_log_file(log_file_path, f"Created evaluation dataset with {eval_dataset.X.size()=}, {eval_dataset.y.size()=}")
+    write_to_log_file(log_file_path, f"Created testing dataset with {test_dataset.X.size()=}, {test_dataset.y.size()=}")
+    write_to_log_file(log_file_path, "")
+
+    return train_dataset, eval_dataset, test_dataset, y_mean, y_std
+    
+
 
 def main():
     # read out the config file
@@ -498,6 +553,8 @@ def main():
         dataset_function = get_mock_datasets
     elif dataset_function_name == "shuffled_and_split":
         dataset_function = get_shuffled_and_split_datasets
+    elif dataset_function_name == "2nd_try":
+        dataset_function = get_2nd_try_dataset
 
     assert dataset_function is not None, "invalid dataset function name was given in config file"
 
