@@ -80,7 +80,7 @@ def main():
         out_file_path = f"/vera/ptmp/gc/jerbo/training_data/{suite_to_use}_no_noise/gp{i}_spectra.hdf5"
 
         n_spectra_to_make = 10000
-        snr=0
+        snr=100
         min_w = 3550
         max_w = 3950
         noise_random_distr = "normal"

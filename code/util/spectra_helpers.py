@@ -206,7 +206,7 @@ def add_noise_to_spectrum(spec, snr, distr='uniform'):
     if distr == 'normal':
         n = len(spec)
         mu = 0
-        sigma = snr  # as the signal strength is normalized to 1
+        sigma = 1/snr  # as the signal strength is normalized to 1
         noise_array = np.random.normal(mu, sigma, n)
 
         noisy_spec = noise_array + spec

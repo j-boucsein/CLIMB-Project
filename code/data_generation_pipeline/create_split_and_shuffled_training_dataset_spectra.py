@@ -215,10 +215,10 @@ def main():
     for i in gps_to_use:
         print(f"starting gp {i}")
         gp_path = f"/vera/ptmp/gc/jerbo/{suite_to_use}/gridpoint{i}/"
-        out_file_path = f"/vera/ptmp/gc/jerbo/training_data/{suite_to_use}_shuffle_and_split/gp{i}_spectra"
+        out_file_path = f"/vera/ptmp/gc/jerbo/training_data/L25n256snr10_6095_sas/gp{i}_spectra"
 
         n_spectra_to_make = 10000
-        snr=0.01
+        snr=10
         min_w = 3550
         max_w = 3950
         noise_random_distr = "normal"
