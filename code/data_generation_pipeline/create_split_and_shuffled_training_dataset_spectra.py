@@ -122,7 +122,7 @@ def patch_spectra_together(gp_path, spectra_to_augment, min_wavelength, max_wave
         return wavelengths, augmented_spectra
 
 
-def make_training_spectra_one_box(gridpoint_path, outfile_path, n_spectra, snr,
+def make_training_spectra_one_box(gridpoint_path, outfile_path, snr,
                                    min_wavelength, max_wavelength,
                                    noise_random_distr="normal", total_num_spectra_per_file=10000):
     """
@@ -208,24 +208,70 @@ def make_training_spectra_one_box(gridpoint_path, outfile_path, n_spectra, snr,
     spec_file_test.create_file(metadata_file, wavelengths_test, noisy_spectra_test)
 
 
+def make_reference_box_spectra(ref_box_path, outfile_path, snr,
+                                   min_wavelength, max_wavelength,
+                                   noise_random_distr="normal", total_num_spectra_per_file=10000):
+
+    base_spectra = random.sample(range(0, total_num_spectra_per_file), total_num_spectra_per_file)
+    wavelengths, patched_spectra = patch_spectra_together(ref_box_path, base_spectra, min_wavelength, max_wavelength, base_spectra, total_num_spectra_per_file=total_num_spectra_per_file)
+    wavelengths, patched_spectra = np.array(wavelengths), np.stack(patched_spectra, axis=0)
+
+    mask = (wavelengths > min_wavelength) & (wavelengths < max_wavelength)
+    wavelengths,  patched_spectra = wavelengths[mask], patched_spectra[:, mask]
+
+    noisy_spectra = []
+    for spec in patched_spectra:
+        noisy_spectra.append(add_noise_to_spectrum(spec, snr, distr=noise_random_distr))
+
+    noisy_spectra = np.stack(noisy_spectra, axis=0)
+
+    # collect the metadata for the file
+    Omega0, OmegaBaryon, OmegaLambda, HubbleParam = get_cosmo_parameters(ref_box_path)
+
+    boxsize = get_data_from_header(ref_box_path, 3, "BoxSize")*1e-3  # convert to Mpc/h
+    redshift = get_data_from_header(ref_box_path, 3, "Redshift")
+
+    metadata_file = {
+        "Omega0": Omega0,
+        "OmegaLambda": OmegaLambda,
+        "OmegaBaryon": OmegaBaryon,
+        "HubbleParam": HubbleParam,
+        "BoxSize": boxsize,
+        "Redshift": redshift,
+        "SNR": snr,
+        "Noise_random_distr": noise_random_distr
+    }
+
+    spec_file = SpectraCustomHDF5(outfile_path)
+    spec_file.create_file(metadata_file, wavelengths, noisy_spectra)
+
+
 def main():
     suite_to_use = "L25n256_suite"
+    gp_path_base = f"/vera/ptmp/gc/jerbo/{suite_to_use}/"
+    out_file_path_base = f"/vera/ptmp/gc/jerbo/training_data/L25n256snr10_6095_sas/"
     gps_to_use = [i for i in range(50)]
+
+    snr=10
+    min_w = 3600
+    max_w = 3950
+    noise_random_distr = "normal"
+    total_spectra_in_file = 10000
 
     for i in gps_to_use:
         print(f"starting gp {i}")
-        gp_path = f"/vera/ptmp/gc/jerbo/{suite_to_use}/gridpoint{i}/"
-        out_file_path = f"/vera/ptmp/gc/jerbo/training_data/L25n256snr10_6095_sas/gp{i}_spectra"
+        gp_path = gp_path_base + f"gridpoint{i}/"
+        out_file_path_gps = out_file_path_base + f"gp{i}_spectra"
 
-        n_spectra_to_make = 10000
-        snr=10
-        min_w = 3550
-        max_w = 3950
-        noise_random_distr = "normal"
-        total_spectra_in_file = 10000
-
-        make_training_spectra_one_box(gp_path, out_file_path, n_spectra_to_make, snr, 
+        make_training_spectra_one_box(gp_path, out_file_path_gps, snr, 
                                   min_w, max_w, noise_random_distr=noise_random_distr,
+                                  total_num_spectra_per_file=total_spectra_in_file)
+    
+    ref_box_path = gp_path_base + "reference_point/"
+    out_file_path_ref = out_file_path_base + "reference_point.hdf5"
+
+    make_reference_box_spectra(ref_box_path, out_file_path_ref, snr,
+                                min_w, max_w, noise_random_distr=noise_random_distr,
                                   total_num_spectra_per_file=total_spectra_in_file)
 
 
