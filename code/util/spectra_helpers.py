@@ -183,7 +183,7 @@ def add_noise_to_spectrum(spec, snr, distr='uniform'):
 
     Args:
         spec (np.array): flux values of a given spectrum
-        snr (float): Signal-to-noise ratio of the added noise
+        snr (float or np.array): Signal-to-noise ratio of the added noise
         distr (str, optional): type of the random distibution. Defaults to 'uniform'.
 
     Returns:
@@ -212,6 +212,18 @@ def add_noise_to_spectrum(spec, snr, distr='uniform'):
         noisy_spec = noise_array + spec
 
         # noisy_spec[np.where(noisy_spec>1)] = 1
+        noisy_spec[np.where(noisy_spec<0)] = 0
+
+        return noisy_spec
+    
+    if distr == "realistic":
+        assert len(snr) == len(spec), f"shape of noise array with {snr.shape=} doesnt match shape of spectrum with {spec.shape=}"
+
+        mu = 0
+        sigma = 1/snr
+        noise_array = np.random.normal(mu, sigma)
+
+        noisy_spec = noise_array + spec
         noisy_spec[np.where(noisy_spec<0)] = 0
 
         return noisy_spec
