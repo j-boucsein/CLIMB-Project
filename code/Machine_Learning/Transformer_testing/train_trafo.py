@@ -4,6 +4,7 @@ from torch.utils.data import DataLoader, Dataset
 import csv
 import time
 import yaml
+import corner
 import matplotlib.pyplot as plt
 
 import sys, os
@@ -51,7 +52,7 @@ def build_dataset_for_gridpoints(gridpoints, suite_of_spectra, shuffle_and_split
             path_to_file = f"/vera/ptmp/gc/jerbo/training_data/{suite_of_spectra}/gp{i}_spectra_{shuffle_and_split_type}.hdf5"
         spec_file = SpectraCustomHDF5(path_to_file)
         _, flux = spec_file.get_all_spectra()  
-        flux = flux[:1000]  # (1000, 468) TODO: delete this line for training with the full dataset
+        # flux = flux[:1000]  # (1000, 468) TODO: delete this line for training with the full dataset
 
         metadata = spec_file.get_header()
         params = metadata["Omega0"], metadata["OmegaBaryon"], metadata["OmegaLambda"], metadata["HubbleParam"]
@@ -77,17 +78,14 @@ class SpectraCosmoDataset(Dataset):
         return self.X[idx], self.y[idx]
     
 
-def _normalize(dataset, X_mean, X_std, y_mean, y_std):
+def _normalize(dataset, y_mean, y_std):
     """Normalize the given dataset using the other given parameters
 
     Args:
         dataset (torch.utils.data.Dataset): dataset to be normalized
-        X_mean (float): mean of the training X data
-        X_std (_type_): std of the training X data
         y_mean (_type_): mean of the training y data
         y_std (_type_): std of the training y data
     """
-    # dataset.X = (dataset.X - X_mean) / X_std
     dataset.y = (dataset.y - y_mean) / y_std
 
 
@@ -131,15 +129,12 @@ def get_datasets(suite_of_spectra, log_file_path):
 
     ############### Standardize the data ####################
 
-    X_mean = train_dataset.X.mean(dim=0)
-    X_std  = train_dataset.X.std(dim=0) + 1e-8
-
     y_mean = train_dataset.y.mean(dim=0)
     y_std  = train_dataset.y.std(dim=0) + 1e-8
 
-    _normalize(train_dataset, X_mean, X_std, y_mean, y_std)
-    _normalize(eval_dataset, X_mean, X_std, y_mean, y_std)
-    _normalize(test_dataset, X_mean, X_std, y_mean, y_std)
+    _normalize(train_dataset, y_mean, y_std)
+    _normalize(eval_dataset, y_mean, y_std)
+    _normalize(test_dataset, y_mean, y_std)
 
     ############## Test if there is no information leakege between datasets ##############
 
@@ -265,16 +260,12 @@ def get_datasets_shuffle_over_gps(suite_of_spectra, log_file_path):
     eval_dataset  = SpectraCosmoDataset(X_eval,  y_eval)
     test_dataset  = SpectraCosmoDataset(X_test,  y_test)
 
-
-    X_mean = train_dataset.X.mean(dim=0)
-    X_std  = train_dataset.X.std(dim=0) + 1e-8
-
     y_mean = train_dataset.y.mean(dim=0)
     y_std  = train_dataset.y.std(dim=0) + 1e-8
 
-    _normalize(train_dataset, X_mean, X_std, y_mean, y_std)
-    _normalize(eval_dataset, X_mean, X_std, y_mean, y_std)
-    _normalize(test_dataset, X_mean, X_std, y_mean, y_std)
+    _normalize(train_dataset, y_mean, y_std)
+    _normalize(eval_dataset, y_mean, y_std)
+    _normalize(test_dataset, y_mean, y_std)
 
     return train_dataset, eval_dataset, test_dataset, y_mean, y_std
 
@@ -409,15 +400,12 @@ def get_mock_datasets(suite_of_spectra, log_file_path):
 
     ############### Standardize the data ####################
 
-    X_mean = train_dataset.X.mean(dim=0)
-    X_std  = train_dataset.X.std(dim=0) + 1e-8
-
     y_mean = train_dataset.y.mean(dim=0)
     y_std  = train_dataset.y.std(dim=0) + 1e-8
 
-    _normalize(train_dataset, X_mean, X_std, y_mean, y_std)
-    _normalize(eval_dataset, X_mean, X_std, y_mean, y_std)
-    _normalize(test_dataset, X_mean, X_std, y_mean, y_std)
+    _normalize(train_dataset, y_mean, y_std)
+    _normalize(eval_dataset, y_mean, y_std)
+    _normalize(test_dataset, y_mean, y_std)
 
     ############## Test if there is no information leakege between datasets ##############
 
@@ -444,15 +432,12 @@ def get_shuffled_and_split_datasets(suite_of_spectra, log_file_path):
     eval_dataset  = SpectraCosmoDataset(X_eval,  y_eval)
     test_dataset  = SpectraCosmoDataset(X_test,  y_test)
 
-    X_mean = train_dataset.X.mean(dim=0)
-    X_std  = train_dataset.X.std(dim=0) + 1e-8
-
     y_mean = train_dataset.y.mean(dim=0)
     y_std  = train_dataset.y.std(dim=0) + 1e-8
 
-    _normalize(train_dataset, X_mean, X_std, y_mean, y_std)
-    _normalize(eval_dataset, X_mean, X_std, y_mean, y_std)
-    _normalize(test_dataset, X_mean, X_std, y_mean, y_std)
+    _normalize(train_dataset, y_mean, y_std)
+    _normalize(eval_dataset, y_mean, y_std)
+    _normalize(test_dataset, y_mean, y_std)
 
     write_to_log_file(log_file_path, f"Created training dataset with {train_dataset.X.size()=}, {train_dataset.y.size()=}")
     write_to_log_file(log_file_path, f"Created evaluation dataset with {eval_dataset.X.size()=}, {eval_dataset.y.size()=}")
@@ -461,6 +446,124 @@ def get_shuffled_and_split_datasets(suite_of_spectra, log_file_path):
 
     return train_dataset, eval_dataset, test_dataset, y_mean, y_std
 
+"""
+def get_sas_reference_dataset(suite_of_spectra, y_mean, y_std, log_file_path):
+    X, y = [], []
+
+    path_to_file = f"/vera/ptmp/gc/jerbo/training_data/{suite_of_spectra}/reference_point_spectra.hdf5"
+    spec_file = SpectraCustomHDF5(path_to_file)
+    _, flux = spec_file.get_all_spectra()  
+
+    metadata = spec_file.get_header()
+    params = metadata["Omega0"], metadata["OmegaBaryon"], metadata["OmegaLambda"], metadata["HubbleParam"]
+
+    for spec in flux:
+        X.append(spec)
+        y.append(params)
+
+    X, y = np.array(X), np.array(y)
+
+    dataset  = SpectraCosmoDataset(X,  y)
+
+    _normalize(dataset, y_mean, y_std)
+
+    loader = DataLoader(dataset, batch_size=128, shuffle=False, pin_memory=True)
+
+    return loader
+
+
+def make_corner_plots(y_pred, model_name):
+
+    # Your inferred samples
+    samples = y_pred  # shape (N, 4)
+
+    labels = [
+        r"$\Omega_{\mathrm{m}}$",
+        r"$\Omega_{\mathrm{b}}$",
+        r"$\Omega_{\Lambda}$",
+        r"$H_0$"
+    ]
+
+    # Planck values
+    planck = np.array([0.315, 0.0493, 0.685, 0.674])
+    planck_err = np.array([0.007, 2.2e-4, 0.007, 0.005])
+    #planck = np.array([0.3089, 0.0486, 0.6911, 0.6774]) 
+
+    # Global matplotlib style tweaks (very Planck-y)
+    plt.rcParams.update({
+        "font.size": 12,
+        "font.family": "serif",
+        "mathtext.fontset": "cm",
+        "axes.linewidth": 1.2,
+        "xtick.major.width": 1.2,
+        "ytick.major.width": 1.2
+    })
+
+    fig = corner.corner(
+        samples,
+        labels=labels,
+        bins=50,
+        smooth=1.2,
+        color="#1f77b4",
+        plot_datapoints=False,
+        fill_contours=True,
+        levels=(0.68, 0.95),
+        contour_kwargs={"linewidths": [1, 1]},
+        hist_kwargs={"density": True, "linewidth": 1.6},
+    )
+
+    axes = np.array(fig.axes).reshape((4, 4))
+
+    # Overlay Planck constraints
+    for i in range(4):
+        # Diagonal: 1D constraints
+        ax = axes[i, i]
+        ax.axvline(planck[i], color="black", lw=2)
+        ax.axvspan(
+            planck[i] - planck_err[i],
+            planck[i] + planck_err[i],
+            color="black",
+            alpha=0.25
+        )
+
+        # Off-diagonal: Planck crosshairs
+        for j in range(i):
+            ax = axes[i, j]
+            ax.axvline(planck[j], color="black", lw=1)
+            ax.axhline(planck[i], color="black", lw=1)
+
+    axes = np.array(fig.axes).reshape((4, 4))
+
+    # Define tighter limits (tune as needed)
+    omega_m_lim = (0.24, 0.36)
+    omega_b_lim = (0.030, 0.065)
+    omega_L_lim = (0.63, 0.73)
+
+    # Diagonal panels
+    axes[0, 0].set_xlim(omega_m_lim)
+    axes[1, 1].set_xlim(omega_b_lim)
+    axes[2, 2].set_xlim(omega_L_lim)
+
+    # Off-diagonal panels involving Ωm
+    for i in range(1, 4):
+        axes[i, 0].set_xlim(omega_m_lim)
+        axes[0, i].set_ylim(omega_m_lim)
+
+    # Off-diagonal panels involving ΩΛ
+    for i in range(4):
+        if i != 2:
+            axes[2, i].set_ylim(omega_L_lim)
+            axes[i, 2].set_xlim(omega_L_lim)
+
+    # Off-diagonal panels involving Ωb
+    for i in range(4):
+        if i != 1:
+            axes[1, i].set_ylim(omega_b_lim)
+            axes[i, 1].set_xlim(omega_b_lim)
+
+    plt.tight_layout()
+    plt.savefig(f"plots/{model_name}_cornerplot.pdf", format="PDF")
+"""
 
 def get_2nd_try_helper(base_path):
     files = os.listdir(base_path)
@@ -497,15 +600,12 @@ def get_2nd_try_dataset(suite_of_spectra, log_file_path):
     eval_dataset  = SpectraCosmoDataset(X_eval,  y_eval)
     test_dataset  = SpectraCosmoDataset(X_test,  y_test)
 
-    X_mean = train_dataset.X.mean(dim=0)
-    X_std  = train_dataset.X.std(dim=0) + 1e-8
-
     y_mean = train_dataset.y.mean(dim=0)
     y_std  = train_dataset.y.std(dim=0) + 1e-8
 
-    _normalize(train_dataset, X_mean, X_std, y_mean, y_std)
-    _normalize(eval_dataset, X_mean, X_std, y_mean, y_std)
-    _normalize(test_dataset, X_mean, X_std, y_mean, y_std)
+    _normalize(train_dataset, y_mean, y_std)
+    _normalize(eval_dataset, y_mean, y_std)
+    _normalize(test_dataset, y_mean, y_std)
 
     write_to_log_file(log_file_path, f"Created training dataset with {train_dataset.X.size()=}, {train_dataset.y.size()=}")
     write_to_log_file(log_file_path, f"Created evaluation dataset with {eval_dataset.X.size()=}, {eval_dataset.y.size()=}")
@@ -594,7 +694,7 @@ def main():
 
     # initialize loss function and optimizer
     criterion = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=8.96e-5)
 
     write_to_log_file(log_file_path, "")
     write_to_log_file(log_file_path, "Beginning training ...")
@@ -652,6 +752,16 @@ def main():
     write_to_log_file(log_file_path, "Done with inference on test set")
     write_to_log_file(log_file_path, f"Final Test loss: {test_loss:.2e}")
     write_to_log_file(log_file_path, "Saved inference plot")
+    """
+    write_to_log_file(log_file_path, "Do inference on reference box")
+    ref_loader = get_sas_reference_dataset(suite_of_spectra, y_mean, y_std, log_file_path)
+    ref_loss, y_ref_true, y_ref_pred = eval_model_plots(model, ref_loader, criterion, device)
+    write_to_log_file(log_file_path, f"Loss on ref box: {ref_loss:.2e}")
+
+    y_ref_true, y_ref_pred  = y_ref_true.to(torch.device("cpu"))*y_std + y_mean, y_ref_pred.to(torch.device("cpu"))*y_std + y_mean
+    y_true, y_pred = y_ref_true.numpy(), y_ref_pred.numpy()
+
+    make_corner_plots(y_true, model_name)"""
 
     write_to_log_file(log_file_path, "-------------- DONE --------------")
 
