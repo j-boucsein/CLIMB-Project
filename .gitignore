@@ -15,7 +15,7 @@ ENV/
 # Jupyter runtime files
 .jupyter/
 
-# Data/outputs (optional — entfernen falls du diese mit committen möchtest)
+# Data/outputs 
 *.csv
 *.xlsx
 *.h5
@@ -28,6 +28,9 @@ ENV/
 *.fits
 *.mp4
 *.pth
+*.pt
+*log.txt
+*yaml
 
 # Environment configuration / secrets
 *.env
