@@ -249,14 +249,19 @@ def make_reference_box_spectra(ref_box_path, outfile_path, snr,
 def main():
     suite_to_use = "L25n256_suite"
     gp_path_base = f"/vera/ptmp/gc/jerbo/{suite_to_use}/"
-    out_file_path_base = f"/vera/ptmp/gc/jerbo/training_data/L25n256snr10_6095_sas/"
+    out_file_path_base = f"/vera/ptmp/gc/jerbo/training_data/L25n256_realistic_noise_v2_snr10/"
     gps_to_use = [i for i in range(50)]
 
-    snr=10
+    snr = np.load("snr_SDSS_spectra_mean_v2_snr10.npy")
+    noise_random_distr = "realistic"
+    # snr=2
+    # noise_random_distr = "normal"
+
     min_w = 3600
     max_w = 3950
-    noise_random_distr = "normal"
     total_spectra_in_file = 10000
+
+    os.makedirs(out_file_path_base, exist_ok=True)
 
     for i in gps_to_use:
         print(f"starting gp {i}")
@@ -264,15 +269,15 @@ def main():
         out_file_path_gps = out_file_path_base + f"gp{i}_spectra"
 
         make_training_spectra_one_box(gp_path, out_file_path_gps, snr, 
-                                  min_w, max_w, noise_random_distr=noise_random_distr,
-                                  total_num_spectra_per_file=total_spectra_in_file)
+                                min_w, max_w, noise_random_distr=noise_random_distr,
+                                total_num_spectra_per_file=total_spectra_in_file)
     
     ref_box_path = gp_path_base + "reference_point/"
-    out_file_path_ref = out_file_path_base + "reference_point.hdf5"
+    out_file_path_ref = out_file_path_base + "reference_point_spectra.hdf5"
 
     make_reference_box_spectra(ref_box_path, out_file_path_ref, snr,
                                 min_w, max_w, noise_random_distr=noise_random_distr,
-                                  total_num_spectra_per_file=total_spectra_in_file)
+                                total_num_spectra_per_file=total_spectra_in_file)
 
 
 if __name__ == "__main__":
