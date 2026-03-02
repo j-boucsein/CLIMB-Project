@@ -17,8 +17,8 @@ def make_corner_plot(y_pred, save_path, save_plot=True, show_plot=True):
     ]
 
     # Planck values
-    planck = np.array([0.315, 0.0493, 0.685, 0.674])
-    planck_err = np.array([0.007, 2.2e-4, 0.007, 0.005])
+    planck = np.array([0.3089, 0.0486, 0.6911, 0.6774])  # these are the values used in tng, not directly taken from planck
+    planck_err = np.array([0.012, 2.2e-4, 0.009, 0.012])  # theses are taken from planck - should probably make this more consistent
 
     # Global matplotlib style tweaks (very Planck-y)
     plt.rcParams.update({
