@@ -18,10 +18,7 @@ from train_model import eval_model
 import numpy as np
 import matplotlib.pyplot as plt
 import corner
-
-import numpy as np
-import matplotlib.pyplot as plt
-import corner
+from matplotlib.lines import Line2D
 
 def make_corner_plot_multi(y_preds, save_path, save_plot=True, show_plot=True):
     """
@@ -205,8 +202,8 @@ def make_corner_plot_custom(
 
             axes[i, j] = fig.add_subplot(gs[i, j], sharex=sharex, sharey=sharey)
 
-    fill_colors = ["#1f77b4", "#d62728", "#2ca02c", "#9467bd", "#ff7f0e"]
-    edge_colors = ["#0b3c5d", "#7f0000", "#0b6623", "#4b0082", "#8c3f00"]
+    fill_colors = ["#63a5d4", "#de7171", "#6fd66f", "#cfa2f8", "#ffa556"]
+    edge_colors = ["#176395", "#a90c0c", "#199b3c", "#4b0082", "#8c3f00"]
 
     for i in range(n_dim):
         for j in range(n_dim):
@@ -233,19 +230,20 @@ def make_corner_plot_custom(
                         data,
                         bins=bins,
                         range=hist_range,
-                        density=True,
+                        density= True,
                         histtype="step",
                         linewidth=1.4,
-                        color=edge
+                        color=color
                     )
 
                     if planck is not None:
-                        ax.axvline(planck[i], color=planck_color, lw=1.3)
+                        ax.axvline(planck[i], color=planck_color, lw=1.3, linestyle="--", zorder=5)
                         ax.axvspan(
                             planck[i] - planck_err[i],
                             planck[i] + planck_err[i],
                             color=planck_color,
-                            alpha=0.18
+                            alpha=0.07,
+                            zorder=5
                         )
 
                     ax.tick_params(labelleft=False)
@@ -270,18 +268,18 @@ def make_corner_plot_custom(
                         colors=[color],
                         alpha=fill_alpha
                     )
-
+                    
                     ax.contour(
                         xx, yy, zz,
                         levels=[thr],
                         colors=[edge],
                         linewidths=1.5,
-                        linestyles="dashed"
+                        # linestyles="dashed"
                     )
 
                     if planck is not None:
-                        ax.axvline(planck[j], color=planck_color, lw=1.0)
-                        ax.axhline(planck[i], color=planck_color, lw=1.0)
+                        ax.axvline(planck[j], color=planck_color, lw=1.0, linestyle="--")
+                        ax.axhline(planck[i], color=planck_color, lw=1.0, linestyle="--")
 
             # ---- limits ----
             if axis_limits:
@@ -318,6 +316,16 @@ def make_corner_plot_custom(
             for i in range(len(model_names))
         ]
 
+        legend_elements.append(
+            Line2D(
+                [0], [0],
+                color="black",
+                linestyle="--",
+                linewidth=1.3,
+                label="Planck 2015"
+            )
+        )
+
         # center of missing upper-right panel
         anchor_x = (n_dim - 0.5) / n_dim
         anchor_y = (n_dim - 0.5) / n_dim
@@ -338,7 +346,7 @@ def make_corner_plot_custom(
     plt.close()
 
 
-def predict_loader(model, X, device, batch_size=1024):
+def predict_loader(model, X, device, batch_size=16):
     loader = DataLoader(TensorDataset(X), batch_size=batch_size)
     preds = []
 
@@ -351,11 +359,21 @@ def predict_loader(model, X, device, batch_size=1024):
     return torch.cat(preds)
 
 
-models_to_plot = ["realistic_noise_model_snr10", "realistic_noise_model_snr5", "realistic_noise_model_snr2"]
-datasets_used = ["L25n256_realistic_noise_v2_snr10", "L25n256_realistic_noise_v2_snr5", "L25n256_realistic_noise_v2_snr2"]
-snrs_used = [10, 5, 2]
+model_type = "realistic_model" # "sweep_model"
 
-sdss_corner_path = f"plots/SDSS_multi_cornerplot.pdf"
+if model_type == "sweep_model":
+    models_to_plot = ["sweep_model_2", "sweep_model_10", "sweep_model_100"]
+    datasets_used = ["L25n256_snr_sweep_2", "L25n256_snr_sweep_10", "L25n256_snr_sweep_100"]
+    snrs_used = [2, 10, 100]
+    sdss_corner_path = f"plots/sweep_multi_cornerplot.pdf"
+elif model_type == "realistic_model":
+    models_to_plot = ["realistic_noise_model_snr10", "realistic_noise_model_snr5", "realistic_noise_model_snr2"]
+    datasets_used = ["L25n256_realistic_noise_v2_snr10", "L25n256_realistic_noise_v2_snr5", "L25n256_realistic_noise_v2_snr2"]
+    snrs_used = [10, 5, 2]
+    sdss_corner_path = f"plots/SDSS_multi_cornerplot.pdf"
+else:
+    assert False, "Model not found!"
+
 
 y_pred_sdss_list = []
 
@@ -370,7 +388,11 @@ for index in range(len(models_to_plot)):
     config_path = f"../log_files/{model_name}_config.yaml"
     state_path = f"../model_states/{model_name}_weights.pt"
 
-    sdss_specs = get_sdss_spectra_for_inference(cat_path, resid_file, snr_filter)
+    if model_type == "sweep_model":
+        sdss_specs, _ = get_spectra_reference_point(suite_of_spectra, n_spectra=10000)
+        sdss_specs = torch.Tensor(np.array(sdss_specs))
+    elif model_type == "realistic_model":
+        sdss_specs = get_sdss_spectra_for_inference(cat_path, resid_file, snr_filter)
 
     input_len = sdss_specs.shape[1]
     output_len = 4
@@ -389,6 +411,32 @@ for index in range(len(models_to_plot)):
 
     y_pred_sdss_list.append(y_pred_sdss)
 
+if model_type == "sweep_model":
+    model_names_plot = [
+        "Constant SNR 2 model",
+        "Constant SNR 10 model",
+        "Constant SNR 100 model"
+    ]
+    axis_limits = [
+        (0.25, 0.37),
+        (0.03, 0.075),
+        (0.64, 0.739),
+        (0.63, 0.74)
+    ]
+elif model_type == "realistic_model":
+    model_names_plot = [
+        "Realistic SNR 10 model",
+        "Realistic SNR 5 model",
+        "Realistic SNR 2 model"
+    ]
+    axis_limits = [
+        (0.1, 0.5),
+        (0, 0.08),
+        (0.56, 0.87),
+        None
+    ]
+
+
 make_corner_plot_custom(
     y_pred_sdss_list,
 
@@ -399,28 +447,19 @@ make_corner_plot_custom(
         r"$H_0$"
     ],
 
-    model_names=[
-        "Realistic SNR 10 model",
-        "Realistic SNR 5 model",
-        "Realistic SNR 2 model"
-    ],
+    model_names=model_names_plot,
 
-    axis_limits=[
-        (0.1, 0.5),
-        (0, 0.08),
-        (0.56, 0.87),
-        None
-    ],
+    axis_limits=axis_limits,
 
     planck=np.array([0.3089, 0.0486, 0.6911, 0.6774]),
     planck_err=np.array([0.012, 2.2e-4, 0.009, 0.012]),
 
-    bw_scale=0.4,   # lower = sharper contours
-    fill_alpha=0.5,
+    bw_scale=1,   # lower = sharper contours
+    fill_alpha=0.7,
     gridsize=250,
     bins=50,
     figsize=(8,8),
-    planck_color="#4A0747",
+    planck_color="#000000",
 
     save_path=sdss_corner_path
 )

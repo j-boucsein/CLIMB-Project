@@ -132,12 +132,12 @@ def plot_selected_spectra(spectra, wavelengths, save_path, save_plot=True):
 
 
 def plot_test_inference_errorbars(y_true, y_pred, save_path, save_plot=False):
-    params = ["Omega_m", "Omega_b", "Omega_L", "H0"]
+    params = [r"$\Omega_m$", r"$\Omega_b$", r"$\Omega_\Lambda$", r"$H_0$"]
 
     y_true_by_param = [y_true[:, i] for i in range(len(params))]
     y_pred_by_param = [y_pred[:, i] for i in range(len(params))]
 
-    fig, axs = plt.subplots(2, 2, figsize=(7, 7))
+    fig, axs = plt.subplots(2, 2, figsize=(8, 8))
 
     for index in range(4):
 
@@ -161,15 +161,17 @@ def plot_test_inference_errorbars(y_true, y_pred, save_path, save_plot=False):
 
         ax = axs[index%2, index//2]
 
+        ax.set_box_aspect(1)
+
         ax.plot(sorted(y_true_par), sorted(y_true_par), linestyle="--", c="red", alpha=0.7, zorder=2)
 
         ax.scatter(y_true_par, y_pred_par, alpha=0.5, c="lightgrey", zorder=1, label="inference points", rasterized=True)
         ax.errorbar(y_true_unique_par, y_pred_mean_par, yerr=y_pred_std_par, linestyle="None", marker="x", color="black", zorder=3, label=r"mean with 1 $\sigma$ std")
 
-        ax.set_xlabel("true")
-        ax.set_ylabel("pred")
+        ax.set_xlabel(r"y true $\theta_{\star}$")
+        ax.set_ylabel(r"y pred $\hat{\theta}$")
         ax.set_title(f"{params[index]}")
-        ax.legend(prop={'size': 8})
+        # ax.legend(prop={'size': 8})
 
     plt.tight_layout()
     if save_plot:
@@ -178,12 +180,12 @@ def plot_test_inference_errorbars(y_true, y_pred, save_path, save_plot=False):
 
 
 def plot_test_inference_colors(y_true, y_pred, save_path, save_plot=False):
-    params = ["Omega_m", "Omega_b", "Omega_L", "H0"]
+    params = [r"$\Omega_m$", r"$\Omega_b$", r"$\Omega_\Lambda$", r"$H_0$"]
 
     y_true_by_param = [y_true[:, i] for i in range(len(params))]
     y_pred_by_param = [y_pred[:, i] for i in range(len(params))]
 
-    fig, axs = plt.subplots(2, 2, figsize=(7, 7))
+    fig, axs = plt.subplots(2, 2, figsize=(8, 7.15), constrained_layout=True)
 
     for index in range(4):
 
@@ -232,6 +234,8 @@ def plot_test_inference_colors(y_true, y_pred, save_path, save_plot=False):
 
         ax = axs[index % 2, index // 2]
 
+        ax.set_box_aspect(1)
+
         # ---------- density image ----------
         im = ax.imshow(
             H_norm.T,
@@ -260,9 +264,13 @@ def plot_test_inference_colors(y_true, y_pred, save_path, save_plot=False):
         ax.set_ylim([y_min, y_max])
         ax.set_title(params[index])
 
+        ax.set_xlabel(r"y true $\theta_{\star}$")
+        ax.set_ylabel(r"y pred $\hat{\theta}$")
+
     # ---------- colorbar ----------
     cbar = fig.colorbar(im, ax=axs, fraction=0.046, pad=0.04)
-    cbar.set_label("P(y_pred | x_true)")
+    cbar.set_label(r"$p(\hat{\theta}_1, ..., \hat{\theta}_n \mid \theta_{\star})$")
+
     if save_plot:
         plt.savefig(save_path, format="PDF")
     plt.show()
@@ -327,12 +335,12 @@ def plot_all_PDFs(y_true, y_pred, save_path, save_plot=True):
 
         fig, axs = plt.subplots(
             n_rows, n_cols,
-            figsize=(2*n_cols, int(n_rows/2)),
+            figsize=(8, 4),
             sharex=True,
             sharey=True
         )
 
-        fig.suptitle(rf"Infered conditional PDF slices for {params_plot_name[index]}", fontsize=14, y=0.995)
+        fig.suptitle(rf"Likelihood slices for {params_plot_name[index]}", y=0.995)
 
         # normalize x-values to [0,1] for colormap
         norm_x = (y_true_unique[non_empty_indices] - y_true_par.min()) / (y_true_par.max() - y_true_par.min())
@@ -363,7 +371,7 @@ def plot_all_PDFs(y_true, y_pred, save_path, save_plot=True):
         )    
 
 
-        for ax in axs[:n_non_empty]:
+        for i, ax in enumerate(axs[:n_non_empty]):
             # set log y-axis
             ax.set_yscale("log")
             ax.set_ylim(bottom=1e-4)
@@ -381,7 +389,12 @@ def plot_all_PDFs(y_true, y_pred, save_path, save_plot=True):
                 direction='in',
                 length=3
             )
-            
+
+            if i == 29:
+                ax.set_xlabel(r"$\theta_\star$")
+            if i == 4:
+                ax.set_ylabel(r"$p(\hat{\theta}_1, ..., \hat{\theta}_n \mid \theta_{\star})$")
+        
         if save_plot:
             save_path_mod = save_path.split(".")[0] + f"_{params[index]}." + save_path.split(".")[-1]
             plt.savefig(save_path_mod, format="PDF")
@@ -394,7 +407,7 @@ def plot_curvature_param(y_true, y_pred, save_path, save_plot=True):
     y_true_by_param = [y_true[:, i] for i in range(len(params))]
     y_pred_by_param = [y_pred[:, i] for i in range(len(params))]
 
-    fig, axs = plt.subplots(1, 1, figsize=(7, 4))
+    fig, axs = plt.subplots(1, 1, figsize=(8, 3))
 
     y_true_Om = y_true_by_param[0]
     y_true_OL = y_true_by_param[2]
@@ -424,6 +437,7 @@ def plot_curvature_param(y_true, y_pred, save_path, save_plot=True):
    
     axs.set_ylim([-4e-3, 4e-3])
     axs.set_xlabel(r"true $\Omega_m$")
+    axs.set_ylabel(r"k")
     axs.set_title("Infered curvature parameter")
     axs.legend()
 
