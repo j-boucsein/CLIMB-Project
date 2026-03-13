@@ -359,18 +359,28 @@ def predict_loader(model, X, device, batch_size=16):
     return torch.cat(preds)
 
 
-model_type = "realistic_model" # "sweep_model"
+model_type =  "128_comparison" # "realistic_model" # "real_spectra" # "sweep_model"
 
 if model_type == "sweep_model":
     models_to_plot = ["sweep_model_2", "sweep_model_10", "sweep_model_100"]
     datasets_used = ["L25n256_snr_sweep_2", "L25n256_snr_sweep_10", "L25n256_snr_sweep_100"]
     snrs_used = [2, 10, 100]
     sdss_corner_path = f"plots/sweep_multi_cornerplot.pdf"
-elif model_type == "realistic_model":
+elif model_type == "real_spectra":
     models_to_plot = ["realistic_noise_model_snr10", "realistic_noise_model_snr5", "realistic_noise_model_snr2"]
     datasets_used = ["L25n256_realistic_noise_v2_snr10", "L25n256_realistic_noise_v2_snr5", "L25n256_realistic_noise_v2_snr2"]
     snrs_used = [10, 5, 2]
     sdss_corner_path = f"plots/SDSS_multi_cornerplot.pdf"
+elif model_type == "realistic_model":
+    models_to_plot = ["realistic_noise_model_snr2", "realistic_noise_model_snr5", "realistic_noise_model_snr10"]
+    datasets_used = ["L25n256_realistic_noise_v2_snr2", "L25n256_realistic_noise_v2_snr5", "L25n256_realistic_noise_v2_snr10"]
+    snrs_used = [2, 5, 10]
+    sdss_corner_path = f"plots/Realistic_multi_cornerplot.pdf"
+elif model_type == "128_comparison":
+    models_to_plot = ["128_model_var_snr10", "128_model_snr10"]
+    datasets_used = ["L25n128_var_snr10", "L25n128_snr10"]
+    snrs_used = [10, 10]
+    sdss_corner_path = f"plots/128_multi_cornerplot_var.pdf"
 else:
     assert False, "Model not found!"
 
@@ -391,9 +401,15 @@ for index in range(len(models_to_plot)):
     if model_type == "sweep_model":
         sdss_specs, _ = get_spectra_reference_point(suite_of_spectra, n_spectra=10000)
         sdss_specs = torch.Tensor(np.array(sdss_specs))
-    elif model_type == "realistic_model":
+    elif model_type == "real_spectra":
         sdss_specs = get_sdss_spectra_for_inference(cat_path, resid_file, snr_filter)
-
+    elif model_type == "realistic_model":
+        sdss_specs, _ = get_spectra_reference_point(suite_of_spectra, n_spectra=10000)
+        sdss_specs = torch.Tensor(np.array(sdss_specs))
+    elif model_type == "128_comparison":
+        sdss_specs, _ = get_spectra_reference_point("L25n128_var_snr10", n_spectra=10000)  # evaluate both on same box, as I want to prevent the different seeds to play a role in testing the model performence
+        sdss_specs = torch.Tensor(np.array(sdss_specs))
+ 
     input_len = sdss_specs.shape[1]
     output_len = 4
 
@@ -413,27 +429,53 @@ for index in range(len(models_to_plot)):
 
 if model_type == "sweep_model":
     model_names_plot = [
-        "Constant SNR 2 model",
-        "Constant SNR 10 model",
-        "Constant SNR 100 model"
+        "C2 model",
+        "C10 model",
+        "C100 model"
     ]
     axis_limits = [
-        (0.25, 0.37),
-        (0.03, 0.075),
-        (0.64, 0.739),
-        (0.63, 0.74)
+        (0.1, 0.5),   # (0.25, 0.37),
+        (0.01, 0.1),  # (0.03, 0.075),
+        (0.5, 0.9),   # (0.64, 0.739),
+        (0.55, 0.85)  # (0.63, 0.74)
     ]
-elif model_type == "realistic_model":
+
+elif model_type == "real_spectra":
     model_names_plot = [
-        "Realistic SNR 10 model",
-        "Realistic SNR 5 model",
-        "Realistic SNR 2 model"
+        "R10 model",
+        "R5 model",
+        "R2 model"
     ]
     axis_limits = [
         (0.1, 0.5),
-        (0, 0.08),
-        (0.56, 0.87),
-        None
+        (0.01, 0.1),  # (0, 0.08),
+        (0.5, 0.9),   # (0.56, 0.87),
+        (0.55, 0.85)  # None
+    ]
+
+elif model_type == "realistic_model":
+    model_names_plot = [
+        "R2 model",
+        "R5 model",
+        "R10 model"
+    ]
+    axis_limits = [
+        (0.1, 0.5),
+        (0.01, 0.1),
+        (0.5, 0.9),
+        (0.55, 0.85)
+    ]
+
+elif model_type == "128_comparison":
+    model_names_plot = [
+        "R10-128-var model",
+        "R10-128 model"
+    ]
+    axis_limits = [
+        (0.1, 0.5),
+        (0.01, 0.1),
+        (0.5, 0.9),
+        (0.55, 0.85)
     ]
 
 
@@ -444,7 +486,7 @@ make_corner_plot_custom(
         r"$\Omega_{\mathrm{m}}$",
         r"$\Omega_{\mathrm{b}}$",
         r"$\Omega_{\Lambda}$",
-        r"$H_0$"
+        r"$h$"
     ],
 
     model_names=model_names_plot,
@@ -452,7 +494,7 @@ make_corner_plot_custom(
     axis_limits=axis_limits,
 
     planck=np.array([0.3089, 0.0486, 0.6911, 0.6774]),
-    planck_err=np.array([0.012, 2.2e-4, 0.009, 0.012]),
+    planck_err=np.array([0.012, 2.2e-4, 0.012, 0.009]),
 
     bw_scale=1,   # lower = sharper contours
     fill_alpha=0.7,
@@ -464,3 +506,7 @@ make_corner_plot_custom(
     save_path=sdss_corner_path
 )
 # make_corner_plot_multi(y_pred_sdss_list, sdss_corner_path)
+for i, y_pred in enumerate(y_pred_sdss_list):
+    print(f"Model: {model_names_plot[i]}, {model_type}")
+    print(f"{np.mean(np.array(y_pred), axis=0)}")
+    print(f"{np.std(np.array(y_pred), axis=0)}")

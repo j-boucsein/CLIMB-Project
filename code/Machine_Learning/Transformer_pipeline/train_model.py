@@ -110,6 +110,7 @@ def plot_loss_curve(train_loss, eval_loss, save_path):
         eval_loss (list): list containing eval loss
         save_path (string): path of where to save the plot to
     """
+    fig = plt.subplots(figsize=(4, 3))
 
     plt.plot([i for i in range(len(train_loss))], train_loss, label="train loss")
     plt.plot([i for i in range(len(eval_loss))], eval_loss, label="validation loss")
@@ -117,6 +118,8 @@ def plot_loss_curve(train_loss, eval_loss, save_path):
     plt.ylabel("MSE Loss")
     plt.xlabel("Number of epochs")
     plt.legend()
+
+    plt.tight_layout()
 
     plt.savefig(save_path, format="PDF")
 

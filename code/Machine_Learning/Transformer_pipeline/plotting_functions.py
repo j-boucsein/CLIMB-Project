@@ -13,7 +13,7 @@ def make_corner_plot(y_pred, save_path, save_plot=True, show_plot=True):
         r"$\Omega_{\mathrm{m}}$",
         r"$\Omega_{\mathrm{b}}$",
         r"$\Omega_{\Lambda}$",
-        r"$H_0$"
+        r"$h$"
     ]
 
     # Planck values
@@ -132,7 +132,7 @@ def plot_selected_spectra(spectra, wavelengths, save_path, save_plot=True):
 
 
 def plot_test_inference_errorbars(y_true, y_pred, save_path, save_plot=False):
-    params = [r"$\Omega_m$", r"$\Omega_b$", r"$\Omega_\Lambda$", r"$H_0$"]
+    params = [r"$\Omega_m$", r"$\Omega_b$", r"$\Omega_\Lambda$", r"$h$"]
 
     y_true_by_param = [y_true[:, i] for i in range(len(params))]
     y_pred_by_param = [y_pred[:, i] for i in range(len(params))]
@@ -180,7 +180,7 @@ def plot_test_inference_errorbars(y_true, y_pred, save_path, save_plot=False):
 
 
 def plot_test_inference_colors(y_true, y_pred, save_path, save_plot=False):
-    params = [r"$\Omega_m$", r"$\Omega_b$", r"$\Omega_\Lambda$", r"$H_0$"]
+    params = [r"$\Omega_m$", r"$\Omega_b$", r"$\Omega_\Lambda$", r"$h$"]
 
     y_true_by_param = [y_true[:, i] for i in range(len(params))]
     y_pred_by_param = [y_pred[:, i] for i in range(len(params))]
@@ -279,7 +279,7 @@ def plot_test_inference_colors(y_true, y_pred, save_path, save_plot=False):
 def plot_all_PDFs(y_true, y_pred, save_path, save_plot=True):
 
     params = ["Omega_m", "Omega_b", "Omega_L", "H0"]
-    params_plot_name = [r"$\Omega_m$", r"$\Omega_b$", r"$\Omega_\Lambda$", r"$H_0$"]
+    params_plot_name = [r"$\Omega_m$", r"$\Omega_b$", r"$\Omega_\Lambda$", r"$h$"]
 
     for index in range(4):
 
@@ -402,7 +402,7 @@ def plot_all_PDFs(y_true, y_pred, save_path, save_plot=True):
 
 
 def plot_curvature_param(y_true, y_pred, save_path, save_plot=True):
-    params = ["Omega_m", "Omega_b", "Omega_L", "H0"]
+    params = ["Omega_m", "Omega_b", "Omega_L", "h"]
 
     y_true_by_param = [y_true[:, i] for i in range(len(params))]
     y_pred_by_param = [y_pred[:, i] for i in range(len(params))]
@@ -440,6 +440,8 @@ def plot_curvature_param(y_true, y_pred, save_path, save_plot=True):
     axs.set_ylabel(r"k")
     axs.set_title("Infered curvature parameter")
     axs.legend()
+
+    plt.tight_layout()
 
     if save_plot:
         plt.savefig(save_path, format="PDF")

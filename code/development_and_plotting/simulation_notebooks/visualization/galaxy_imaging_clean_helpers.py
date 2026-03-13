@@ -11,7 +11,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if ROOT not in sys.path:
     sys.path.insert(1, ROOT)
 
-from util.sim_data_helpers import get_data_from_fof_folder, get_data_from_snap_folder, get_data_from_header
+from util.sim_data_helpers import get_data_from_fof_folder, get_data_from_snap_folder, get_data_from_header, get_cosmo_parameters
 
 
 def find_centeral_bh(path, snapN, zoom_in_box_middle, zoom_in_box_size):
@@ -93,8 +93,9 @@ def subhalo_projection(path, snapN, particle_type="PartType4", zomm_in_box_size=
         masses (np.array): list of masses for each particle within the box
         biggest_subhalo_halfmassrad (float): Radius with 500 times the critical density of the universe for that halo
     """
+    Omega0, OmegaBaryon, OmegaLambda, HubbleParam = get_cosmo_parameters(path)
     
-    subhalo_mass = get_data_from_fof_folder(path, snapN, "Group", "GroupMass") * 1e10 # in M_sun
+    subhalo_mass = get_data_from_fof_folder(path, snapN, "Group", "GroupMass") * 1e10/HubbleParam # in M_sun
 
     index_biggest_halo = max(range(len(subhalo_mass)), key=lambda i: subhalo_mass[i])
     bigges_subhalo = subhalo_mass[index_biggest_halo]
@@ -119,9 +120,9 @@ def subhalo_projection(path, snapN, particle_type="PartType4", zomm_in_box_size=
     # transform coordinates to center biggest_halo_cms
     coordinates = get_data_from_snap_folder(path, snapN, particle_type, "Coordinates")
     if particle_type == "PartType0" or particle_type == "PartType4":
-        masses = get_data_from_snap_folder(path, snapN, particle_type, "Masses")*1e10 # in M_sun
+        masses = get_data_from_snap_folder(path, snapN, particle_type, "Masses")*1e10/HubbleParam # in M_sun
     elif particle_type == "PartType1":
-        mass_temp = get_data_from_header(path, snapN, "MassTable")[1]*1e10 # in M_sun
+        mass_temp = get_data_from_header(path, snapN, "MassTable")[1]*1e10/HubbleParam # in M_sun
         masses = np.zeros(len(coordinates)) + mass_temp
     else:
         assert False, "Error: particle_type must be one of [PartType0, PartType1, PartType4]"

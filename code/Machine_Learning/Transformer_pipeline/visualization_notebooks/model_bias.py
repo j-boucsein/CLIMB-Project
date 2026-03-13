@@ -14,7 +14,7 @@ from train_model import eval_model, collect_dataloaders
 
 
 def get_bias_and_var(y_true, y_pred):
-    params = ["Omega_m", "Omega_b", "Omega_L", "H0"]
+    params = ["Omega_m", "Omega_b", "Omega_L", "h"]
 
     y_true_by_param = [y_true[:, i] for i in range(len(params))]
     y_pred_by_param = [y_pred[:, i] for i in range(len(params))]
@@ -95,9 +95,9 @@ for model_name in models_to_plot:
     true_y_by_model.append(true_y_by_par)
 
 
-fig, axs = plt.subplots(2, 2, figsize=(7, 7))
+fig, axs = plt.subplots(2, 2, figsize=(8, 8))
 
-model_names_plot = ["snr2", "snr10", "snr100"]
+model_names_plot = ["C2 model", "C10 model", "C100 model"]
 
 for model_index in range(len(models_to_plot)):
 
@@ -109,20 +109,20 @@ for model_index in range(len(models_to_plot)):
         y_std = np.array(std_by_model[model_index][parameter_index])
         y_true = np.array(true_y_by_model[model_index][parameter_index])
 
-        bias = y_true - y_bias
+        bias = y_true - y_bias  # the naming of variables here is very unfortunate - y_bias is y_mean, really :D
 
         ax.plot(y_true, bias, label=f"{model_names_plot[model_index]}")
         ax.fill_between(y_true, bias + y_std, bias - y_std, alpha=0.3)
 
-param_names = [r"$\Omega_m$", r"$\Omega_b$", r"$\Omega_\Lambda$", r"$H_0$"]
+param_names = [r"$\Omega_m$", r"$\Omega_b$", r"$\Omega_\Lambda$", r"$h$"]
 
 for parameter_index in range(4):
     ax = axs[parameter_index%2, parameter_index//2]
 
     ax.legend()
     ax.set_title(rf"{param_names[parameter_index]}")
-    ax.set_ylabel("y_true - y_pred")
-    ax.set_xlabel("y_true")
+    ax.set_ylabel(r"$\theta_\star - \hat{\theta}$")
+    ax.set_xlabel(r"$\theta_\star$")
 
 plt.tight_layout()
 plt.savefig("plots/model_biases_const.pdf", format="PDF")
