@@ -1,0 +1,55 @@
+Starting optuna
+Finished one training.
+Finished one training.
+Finished one training.
+Finished one training.
+Finished one training.
+Finished one training.
+Finished one training.
+Finished one training.
+Finished one training.
+Finished one training.
+
+Best trial:
+  Value: 0.1984442547865212
+  Params:
+    d_model: 192
+    num_heads: 8
+    num_layers: 4
+    d_ff_mult: 6
+    dropout: 0.011342986139224808
+    lr: 0.00011444659328943796
+    weight_decay: 8.962199515581305e-05
+    batch_size: 16
+[Optuna] PDF export failed for 'history'. Saved HTML only. Reason: RuntimeError
+[Optuna] PDF export failed for 'param_importance'. Saved HTML only. Reason: RuntimeError
+[Optuna] PDF export failed for 'parallel_coords'. Saved HTML only. Reason: RuntimeError
+[Optuna] PDF export failed for 'slice'. Saved HTML only. Reason: RuntimeError
+[Optuna] PDF export failed for 'contour_lr_vs_batch_size'. Saved HTML only. Reason: RuntimeError
+[Optuna] PDF export failed for 'contour_lr_vs_weight_decay'. Saved HTML only. Reason: RuntimeError
+[Optuna] PDF export failed for 'contour_d_model_vs_num_layers'. Saved HTML only. Reason: RuntimeError
+[Optuna] PDF export failed for 'contour_d_model_vs_dropout'. Saved HTML only. Reason: RuntimeError
+[Optuna] Saved visualizations to 'optuna_plots/'
+Finished one training.
+Finished one training.
+
+Best trial:
+  Value: 0.19446746286876498
+  Params:
+    d_model: 256
+    num_heads: 2
+    num_layers: 2
+    d_ff_mult: 8
+    dropout: 0.0
+    batch_size: 16
+    lr: 0.0001
+    weight_decay: 0.01
+[Optuna] PDF export failed for 'history'. Saved HTML only. Reason: RuntimeError
+[Optuna] PDF export failed for 'param_importance'. Saved HTML only. Reason: RuntimeError
+[Optuna] PDF export failed for 'parallel_coords'. Saved HTML only. Reason: RuntimeError
+[Optuna] PDF export failed for 'slice'. Saved HTML only. Reason: RuntimeError
+[Optuna] PDF export failed for 'contour_lr_vs_batch_size'. Saved HTML only. Reason: RuntimeError
+[Optuna] PDF export failed for 'contour_lr_vs_weight_decay'. Saved HTML only. Reason: RuntimeError
+[Optuna] PDF export failed for 'contour_d_model_vs_num_layers'. Saved HTML only. Reason: RuntimeError
+[Optuna] PDF export failed for 'contour_d_model_vs_dropout'. Saved HTML only. Reason: RuntimeError
+[Optuna] Saved visualizations to 'optuna_plots/'

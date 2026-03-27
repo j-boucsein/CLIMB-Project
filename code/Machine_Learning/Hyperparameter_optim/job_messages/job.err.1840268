@@ -1,0 +1,47 @@
+[I 2026-02-09 15:05:20,026] A new study created in RDB with name: transformer_borad_search_2
+[I 2026-02-09 15:05:20,266] Trial 0 pruned. 
+[W 2026-02-09 15:05:20,531] Trial 1 failed with parameters: {'d_model': 128, 'num_heads': 8, 'num_layers': 6, 'd_ff_mult': 2, 'dropout': 0.0, 'batch_size': 64} because of the following error: ValueError('The parameter name, lr, is not found in the given grid.').
+Traceback (most recent call last):
+  File "/vera/u/jerbo/CLIMB-Project/env/lib/python3.12/site-packages/optuna/study/_optimize.py", line 206, in _run_trial
+    value_or_values = func(trial)
+                      ^^^^^^^^^^^
+  File "/vera/u/jerbo/CLIMB-Project/code/Machine_Learning/Hyperparameter_optim/optimization.py", line 92, in objective
+    lr = trial.suggest_float("lr", 1e-5, 5e-3, log=True)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/vera/u/jerbo/CLIMB-Project/env/lib/python3.12/site-packages/optuna/trial/_trial.py", line 163, in suggest_float
+    suggested_value = self._suggest(name, distribution)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/vera/u/jerbo/CLIMB-Project/env/lib/python3.12/site-packages/optuna/trial/_trial.py", line 637, in _suggest
+    param_value = self.study.sampler.sample_independent(
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/vera/u/jerbo/CLIMB-Project/env/lib/python3.12/site-packages/optuna/samplers/_grid.py", line 193, in sample_independent
+    raise ValueError(message)
+ValueError: The parameter name, lr, is not found in the given grid.
+[W 2026-02-09 15:05:20,538] Trial 1 failed with value None.
+Traceback (most recent call last):
+  File "/vera/u/jerbo/CLIMB-Project/code/Machine_Learning/Hyperparameter_optim/optimization.py", line 253, in <module>
+    study.optimize(objective)
+  File "/vera/u/jerbo/CLIMB-Project/env/lib/python3.12/site-packages/optuna/study/study.py", line 490, in optimize
+    _optimize(
+  File "/vera/u/jerbo/CLIMB-Project/env/lib/python3.12/site-packages/optuna/study/_optimize.py", line 68, in _optimize
+    _optimize_sequential(
+  File "/vera/u/jerbo/CLIMB-Project/env/lib/python3.12/site-packages/optuna/study/_optimize.py", line 165, in _optimize_sequential
+    frozen_trial_id = _run_trial(study, func, catch)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/vera/u/jerbo/CLIMB-Project/env/lib/python3.12/site-packages/optuna/study/_optimize.py", line 263, in _run_trial
+    raise func_err
+  File "/vera/u/jerbo/CLIMB-Project/env/lib/python3.12/site-packages/optuna/study/_optimize.py", line 206, in _run_trial
+    value_or_values = func(trial)
+                      ^^^^^^^^^^^
+  File "/vera/u/jerbo/CLIMB-Project/code/Machine_Learning/Hyperparameter_optim/optimization.py", line 92, in objective
+    lr = trial.suggest_float("lr", 1e-5, 5e-3, log=True)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/vera/u/jerbo/CLIMB-Project/env/lib/python3.12/site-packages/optuna/trial/_trial.py", line 163, in suggest_float
+    suggested_value = self._suggest(name, distribution)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/vera/u/jerbo/CLIMB-Project/env/lib/python3.12/site-packages/optuna/trial/_trial.py", line 637, in _suggest
+    param_value = self.study.sampler.sample_independent(
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/vera/u/jerbo/CLIMB-Project/env/lib/python3.12/site-packages/optuna/samplers/_grid.py", line 193, in sample_independent
+    raise ValueError(message)
+ValueError: The parameter name, lr, is not found in the given grid.
