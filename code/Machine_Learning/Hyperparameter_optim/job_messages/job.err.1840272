@@ -1,7 +1,0 @@
-[I 2026-02-09 15:10:26,919] Using an existing study with name 'transformer_borad_search_2' instead of creating a new one.
-[I 2026-02-09 15:10:27,354] Trial 2 pruned. 
-[I 2026-02-09 15:23:00,350] Trial 3 finished with value: 0.4681764133501053 and parameters: {'d_model': 64, 'num_heads': 8, 'num_layers': 4, 'd_ff_mult': 5, 'dropout': 0.2, 'batch_size': 64, 'lr': 0.0001, 'weight_decay': 0.0001}. Best is trial 3 with value: 0.4681764133501053.
-[I 2026-02-09 15:31:12,039] Trial 4 finished with value: 0.2439500575387478 and parameters: {'d_model': 64, 'num_heads': 8, 'num_layers': 2, 'd_ff_mult': 8, 'dropout': 0.1, 'batch_size': 16, 'lr': 0.0005, 'weight_decay': 0.0001}. Best is trial 4 with value: 0.2439500575387478.
-[I 2026-02-09 15:39:16,893] Trial 5 finished with value: 0.35178318450689317 and parameters: {'d_model': 128, 'num_heads': 2, 'num_layers': 4, 'd_ff_mult': 5, 'dropout': 0.1, 'batch_size': 64, 'lr': 0.0001, 'weight_decay': 1e-06}. Best is trial 4 with value: 0.2439500575387478.
-[I 2026-02-09 15:41:13,509] Trial 6 pruned. 
-slurmstepd: error: *** JOB 1840272 ON verag003 CANCELLED AT 2026-02-09T15:53:40 ***
