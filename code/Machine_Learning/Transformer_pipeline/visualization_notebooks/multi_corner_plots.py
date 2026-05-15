@@ -359,8 +359,7 @@ def predict_loader(model, X, device, batch_size=16):
     return torch.cat(preds)
 
 
-model_type =  "128_comparison" # "realistic_model" # "real_spectra" # "sweep_model"
-
+model_type =  "real_spectra_flux_corrected" # "128_comparison" # "realistic_model" # "real_spectra" # "sweep_model" 
 if model_type == "sweep_model":
     models_to_plot = ["sweep_model_2", "sweep_model_10", "sweep_model_100"]
     datasets_used = ["L25n256_snr_sweep_2", "L25n256_snr_sweep_10", "L25n256_snr_sweep_100"]
@@ -381,6 +380,11 @@ elif model_type == "128_comparison":
     datasets_used = ["L25n128_var_snr10", "L25n128_snr10"]
     snrs_used = [10, 10]
     sdss_corner_path = f"plots/128_multi_cornerplot_var.pdf"
+elif model_type == "real_spectra_flux_corrected":
+    models_to_plot = ["realistic_noise_model_snr10_flux_corrected", "realistic_noise_model_snr5_flux_corrected", "realistic_noise_model_snr2_flux_corrected"]
+    datasets_used = ["L25n256_realistic_noise_v2_snr10_mean_flux_corrected", "L25n256_realistic_noise_v2_snr5_mean_flux_corrected", "L25n256_realistic_noise_v2_snr2_mean_flux_corrected"]
+    snrs_used = [10, 5, 2]
+    sdss_corner_path = f"plots/SDSS_flux_corrected_multi_cornerplot.pdf"
 else:
     assert False, "Model not found!"
 
@@ -409,6 +413,8 @@ for index in range(len(models_to_plot)):
     elif model_type == "128_comparison":
         sdss_specs, _ = get_spectra_reference_point("L25n128_var_snr10", n_spectra=10000)  # evaluate both on same box, as I want to prevent the different seeds to play a role in testing the model performence
         sdss_specs = torch.Tensor(np.array(sdss_specs))
+    elif model_type == "real_spectra_flux_corrected":
+        sdss_specs = get_sdss_spectra_for_inference(cat_path, resid_file, snr_filter)
  
     input_len = sdss_specs.shape[1]
     output_len = 4
@@ -476,6 +482,19 @@ elif model_type == "128_comparison":
         (0.01, 0.1),
         (0.5, 0.9),
         (0.55, 0.85)
+    ]
+
+elif model_type == "real_spectra_flux_corrected":
+    model_names_plot = [
+        "R10FC model",
+        "R5FC model",
+        "R2FC model"
+    ]
+    axis_limits = [
+        (0.1, 0.5),
+        (0.01, 0.1),  # (0, 0.08),
+        (0.5, 0.9),   # (0.56, 0.87),
+        (0.55, 0.85)  # None
     ]
 
 
