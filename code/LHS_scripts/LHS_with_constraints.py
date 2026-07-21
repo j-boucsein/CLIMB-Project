@@ -71,7 +71,7 @@ indexes = ["Omega_m", "Omega_b", "Omega_Lambda",
 
 # Sample erstellen
 Oc_bounds = (0.1, 0.4)
-Ob_bounds = (0.001, 0.1)
+Ob_bounds = (0.02, 0.1)
 OL_bounds = (0.5, 0.9)  # Attention: this bound is hard coded in the functions. Changing it here will not have the wanted effect
 h_bounds = (0.55, 0.85)
 # SBHM_bounds = (1e-6, 1e-2)
