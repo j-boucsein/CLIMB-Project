@@ -131,8 +131,7 @@ def get_sdss_file_ids(path, snr_lowe_edge, snr_upper_edge=np.inf):
     return pmf_list
 
 
-def get_sdss_spectra(resid_file_path, pmf_list, speclya_basepath="/virgotng/mpia/obs/SDSS/BOSSLyaDR9_spectra",
-                      min_wavelength=3600.0, max_wavelength=3950.0, return_pmf_list=False):
+def get_sdss_spectra(resid_file_path, pmf_list, speclya_basepath="/pfs/10/project/bw21g005/ly_alpha_sbi_paper/SDSS_spectra/BOSSLyaDR9_spectra", min_wavelength=3600.0, max_wavelength=3950.0, return_pmf_list=False):
     """ Calculates corrected SDSS BOSS Lyman alpha forest spectra from given pmf list and paths within the given
     wavelength range. Note: If pmf_list has thousands of entries, this function might take a couple of minutes to
     run, as it has to open a data file for every spectrum.
