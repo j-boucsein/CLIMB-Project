@@ -80,9 +80,9 @@ def get_interval_boundaries(spectra_info, wavelength_range):
     boundaries = [wl_min]
 
     for z_prev, z_next in zip(used_redshifts[:-1], used_redshifts[1:]):
-        right_edge_prev = spectra_info[z_prev]["right_edge"]
+        left_edge_prev = spectra_info[z_prev]["left_edge"]
         left_edge_next = spectra_info[z_next]["left_edge"]
-        midpoint = 0.5 * (right_edge_prev + left_edge_next)
+        midpoint = 0.5 * (left_edge_prev + left_edge_next)
         # clip in case something unexpected pushes the midpoint outside range
         midpoint = min(max(midpoint, wl_min), wl_max)
         boundaries.append(midpoint)
