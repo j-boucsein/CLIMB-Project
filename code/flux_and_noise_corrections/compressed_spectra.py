@@ -103,7 +103,7 @@ def _process_one_spectrum(task):
     # Basic SDSS quality mask + guard against division blowups
     good_pixel = (
         (mask_comb == 0) &
-        (ivar > 0) &
+        (ivar != 0) &
         (cont != 0) &
         (resid != 0)
     )
