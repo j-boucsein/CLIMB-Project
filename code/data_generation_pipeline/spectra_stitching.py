@@ -2,17 +2,16 @@ import temet
 import numpy as np
 from typing import Callable
 import os
+import json
 import h5py
+import hashlib
+import inspect
 from temet.spectra.util import create_wavelength_grid
 import math
 
 
 def round_half_up(x):
     return math.floor(x + 0.5)
-
-
-def correction_function(x):
-    return x
 
 
 def find_closest_index(array, value):
@@ -175,14 +174,89 @@ def fill_master_tau(spectra_info, used_redshifts, tau_master_1d, n_spectra_to_ge
     return tau_master, usage_records
 
 
+def save_forest_spectra(save_path, wave_master, flux_master, usage_records=None, attrs=None):
+
+    flux_master = np.atleast_2d(flux_master)
+    assert flux_master.shape[1] == wave_master.shape[0], (
+        f"flux has {flux_master.shape[1]} pixels but wavelength grid has {wave_master.shape[0]}.")
+
+    os.makedirs(os.path.dirname(os.path.abspath(save_path)), exist_ok=True)
+
+    with h5py.File(save_path, "w") as f:
+        f.create_dataset("wave", data=np.asarray(wave_master, dtype=np.float64))
+        f.create_dataset("flux", data=flux_master.astype(np.float32),
+                         chunks=(min(64, flux_master.shape[0]), flux_master.shape[1]),
+                         compression="gzip", compression_opts=4)
+
+        if usage_records is not None:
+            records_json = json.dumps(usage_records, default=lambda o: o.item() if hasattr(o, "item") else str(o))
+            f.create_dataset("usage_records", data=np.bytes_(records_json))
+
+        for key, value in (attrs or {}).items():
+            f.attrs[key] = value
+
+    return save_path
+
+
+def load_forest_spectra(save_path):
+
+    with h5py.File(save_path, "r") as f:
+        wave_master = f["wave"][:]
+        flux_master = f["flux"][:]
+        usage_records = json.loads(f["usage_records"][()]) if "usage_records" in f else None
+
+    return wave_master, flux_master, usage_records
+
+
+def hash_spectra_args(wavelength_range, redshifts_to_use, spectra_correction_function,
+                      n_spectra_to_generate, Line_wavelength_restframe, seed=None, n_chars=16):
+    """Hash of everything that influences the generated spectra, used as the file name so that
+    cached spectra are only reused when all arguments are unchanged."""
+
+    if spectra_correction_function is None:
+        correction_repr = "None"
+    else:
+        try:
+            correction_repr = inspect.getsource(spectra_correction_function)
+        except (TypeError, OSError):
+            correction_repr = getattr(spectra_correction_function, "__name__", repr(spectra_correction_function))
+
+    args = {
+        "wavelength_range": [float(w) for w in wavelength_range],
+        "redshifts_to_use": sorted(float(z) for z in redshifts_to_use),
+        "spectra_correction_function": correction_repr,
+        "n_spectra_to_generate": int(n_spectra_to_generate),
+        "Line_wavelength_restframe": float(Line_wavelength_restframe),
+        "seed": None if seed is None else int(seed),
+    }
+
+    return hashlib.sha256(json.dumps(args, sort_keys=True).encode()).hexdigest()[:n_chars]
+
+
 def create_forest_spectra(
         path: str,
         wavelength_range: tuple[float, float],
         redshifts_to_use: list[float],
         spectra_correction_function: Callable,
         n_spectra_to_generate: int,
-        Line_wavelength_restframe=1215.67
+        Line_wavelength_restframe=1215.67,
+        save_spectra = False,
+        seed = None,
     ):
+
+    print("Creating forest spectra for path:", path)
+
+    # hash the arguments before defaulting, so that the identity case is stable
+    args_hash = hash_spectra_args(wavelength_range, redshifts_to_use, spectra_correction_function,
+                                  n_spectra_to_generate, Line_wavelength_restframe, seed)
+
+    if spectra_correction_function is None:
+        spectra_correction_function = lambda x: x
+    save_path = os.path.join(path, "lya_forest_spectra", f"forest_spectra_{args_hash}.hdf5")
+
+    if os.path.exists(save_path):
+        print(f"Forest spectra for these arguments already exist at {save_path}. Loading them instead of recomputing.")
+        return load_forest_spectra(save_path)
 
     # get the necessary iwnfo about the spectra (dz, path, number of pixels and number of available spectra)
     spectra_info = get_spectra_info(path, redshifts_to_use, Line_wavelength_restframe)
@@ -195,51 +269,45 @@ def create_forest_spectra(
     idx_start = find_closest_index(wave_master, wl_min)
     wave_master, tau_master  = wave_master[idx_start:], tau_master[idx_start:]
 
-    #print(wave_master)
-    #print(tau_master)
-
     # get the boundaries in wavelength
     used_redshifts, boundaries = get_interval_boundaries(spectra_info, wavelength_range)
-
-    #print(used_redshifts)
-    #print(boundaries)
-
     # get the boundary indices
     boundary_indices = [find_closest_index(wave_master, b) for b in boundaries]
     assert boundary_indices[0] == 0, (f"Expected first boundary index to be 0 after left truncation, got {boundary_indices[0]} instead.")
 
-    #print(boundary_indices)
-
     spectra_info, final_end_idx = compute_repeat_counts(spectra_info, used_redshifts, boundary_indices)
-    
-    #print(tau_master)
 
-    tau_master, usage_records = fill_master_tau(spectra_info, used_redshifts, tau_master, n_spectra_to_generate, spectra_correction_function, rng=None)
+    rng = np.random.default_rng(seed)
+    tau_master, usage_records = fill_master_tau(spectra_info, used_redshifts, tau_master, n_spectra_to_generate, spectra_correction_function, rng=rng)
 
     for j in range(len(usage_records)):
         for i, x in enumerate(usage_records[j]):
             #print(x)
             usage_records[j][i]["left_wavelength"] = wave_master[x["left_pos"]]
 
-    #print(tau_master)
 
     idx_end = find_closest_index(wave_master, wl_max)
     wave_master, tau_master = wave_master[: idx_end + 1], tau_master[:, : idx_end + 1]
 
     flux_master = np.exp(-tau_master)
 
-    #print(spectra_info)
+    if save_spectra:
+        print(f"Saving {n_spectra_to_generate} forest spectra to {save_path}")
+        save_forest_spectra(save_path, wave_master, flux_master, usage_records,
+                            attrs={"sim_path": path, "wl_min": wl_min, "wl_max": wl_max,
+                                   "args_hash": args_hash,
+                                   "n_spectra": n_spectra_to_generate,
+                                   "seed": -1 if seed is None else int(seed),
+                                   "redshifts_to_use": np.asarray(redshifts_to_use, dtype=float)})
 
     return wave_master, flux_master, usage_records
         
 
 if __name__ == "__main__":
 
-    test_path = "/pfs/10/project/bw21g005/ly_alpha_sbi_paper/L50n512_suite/reference"
+    test_path = "/pfs/10/project/bw21g005/ly_alpha_sbi_paper/L50n512_suite/gridpoint0"
     test_range = (3800, 4500)
-    n_specs = 1
+    n_specs = 100
     redshifts_to_use = [2.0, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9, 3.0]
 
-    wave_master, flux_master, usage_records = create_forest_spectra(test_path, test_range, redshifts_to_use, correction_function, n_specs)
-
-    # TODO: write function that saves the long spectra to file so I dont have to recompute them
+    wave_master, flux_master, usage_records = create_forest_spectra(test_path, test_range, redshifts_to_use, None, n_specs, save_spectra=True, seed=123)
