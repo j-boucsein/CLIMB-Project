@@ -217,6 +217,22 @@ def build_and_save_spectra(resid_file_path, pmf_list, redshifts, output_path,
           f"to {output_path}, grid size = {n_pix} pixels.")
 
 
+def load_spectra_cache(path):
+    """Load a spectra cache saved by build_and_save_spectra. Returns a dict of arrays."""
+    with np.load(path) as npz:
+        return {
+            "wavelength": npz["wavelength"],
+            "flux": npz["flux"],
+            "mask": npz["mask"],
+            "snr": npz["snr"],
+            "redshift": npz["redshift"],
+            "pmf": npz["pmf"],
+            "valid_spectrum": npz["valid_spectrum"],
+            "z_min": float(npz["z_min"]),
+            "z_max": float(npz["z_max"]),
+        }
+
+
 if __name__ == "__main__":
     cat_file = "/pfs/10/project/bw21g005/ly_alpha_sbi_paper/SDSS_spectra/SDSS_support_files/BOSSLyaDR9_cat.fits"
     resid_path = "/pfs/10/project/bw21g005/ly_alpha_sbi_paper/SDSS_spectra/SDSS_support_files/residcorr_v5_4_45.dat"

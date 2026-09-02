@@ -40,7 +40,7 @@ def get_cosmo_parameters(basepath):
         OmegaLambda (float): Energydensity of Dark Energy in the simulation
         HubbleParam (float): h in the simulation
     """
-    path = basepath+"output/txt-files/parameters-usedvalues"
+    path = os.path.join(basepath, "output", "txt-files", "parameters-usedvalues")
     Omega0 = None
     OmegaLambda = None
     HubbleParam = None
