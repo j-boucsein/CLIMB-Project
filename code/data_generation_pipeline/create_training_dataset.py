@@ -17,7 +17,7 @@ def find_closest_index(array, value):
     return int(np.argmin(np.abs(array - value)))
 
 
-def add_noise_to_spectrum(spec, snr, mask=None, fill_value=np.nan, rng=None):
+def add_noise_to_spectrum(spec, sigma_F, mask=None, fill_value=np.nan, rng=None):
 
     if rng is None:
         rng = np.random  # legacy global state, seeded with np.random.seed
@@ -28,18 +28,29 @@ def add_noise_to_spectrum(spec, snr, mask=None, fill_value=np.nan, rng=None):
         valid = mask
         assert valid.shape == spec.shape, f"shape of mask with {valid.shape=} doesnt match shape of spectrum with {spec.shape=}"
 
-    sigma = np.abs(spec[valid] / snr[valid])
-
     noisy_spec = np.full(spec.shape, fill_value, dtype=float)
-    noisy_spec[valid] = spec[valid] + rng.normal(0.0, sigma)
+    noisy_spec[valid] = spec[valid] + rng.normal(0.0, sigma_F[valid])
     noisy_spec[valid & (noisy_spec < 0)] = 0
 
     return noisy_spec
 
 
-def load_sdss_snr(cache_path, min_wavelength, max_wavelength, target_length, n_valid_pixels_min=100):
+def load_sdss_sigma_F(cache_path, min_wavelength, max_wavelength, target_length, n_valid_pixels_min=100):
 
-    data_sdss = load_spectra_cache(cache_path)
+    filtered_cache_path = os.path.join(cache_path, "spectra_filtered_cache.npz")
+    unfiltered_cache_path = os.path.join(cache_path, "spectra_cache.npz")
+
+    if os.path.isfile(filtered_cache_path):
+        with np.load(filtered_cache_path) as npz:
+            data_sdss = {
+                "wavelength": npz["wavelength"],
+                "mask": npz["mask"],
+                "sigma_F": npz["sigma_F"]
+                }
+
+            return data_sdss["wavelength"], data_sdss["sigma_F"], data_sdss["mask"]
+
+    data_sdss = load_spectra_cache(unfiltered_cache_path)
 
     ####################### Filter SDSS spectra for Quasar redshift #######################
     min_req_z = max_wavelength/1215.67 - 1
@@ -48,7 +59,7 @@ def load_sdss_snr(cache_path, min_wavelength, max_wavelength, target_length, n_v
 
     wave_sdss = data_sdss["wavelength"]
     flux_sdss = data_sdss["flux"][mask, :]
-    snr_sdss = data_sdss["snr"][mask, :]
+    sigma_F_sdss = data_sdss["sigma_F"][mask, :]
     mask_sdss = data_sdss["mask"][mask, :]
 
     ####################### truncate SDSS spectra to correct wavelength interval #######################
@@ -63,7 +74,8 @@ def load_sdss_snr(cache_path, min_wavelength, max_wavelength, target_length, n_v
         raise ValueError(f"Length mismatch between SDSS and simulation spectra: {wave_sdss[i0:i1].shape[0]} vs {target_length}")
 
     wave_sdss = wave_sdss[i0:i1]
-    snr_sdss = snr_sdss[:, i0:i1]
+    flux_sdss = flux_sdss[:, i0:i1]
+    sigma_F_sdss = sigma_F_sdss[:, i0:i1]
     mask_sdss = mask_sdss[:, i0:i1]
 
     ####################### Enforce minimum of 100 valid pixels #######################
@@ -71,11 +83,19 @@ def load_sdss_snr(cache_path, min_wavelength, max_wavelength, target_length, n_v
     mask_valid_pixels = np.sum(mask_sdss, axis=1) >= n_valid_pixels_min
 
     wave_sdss = wave_sdss
-    snr_sdss = snr_sdss[mask_valid_pixels, :]
+    flux_sdss = flux_sdss[mask_valid_pixels, :]
+    sigma_F_sdss = sigma_F_sdss[mask_valid_pixels, :]
     mask_sdss = mask_sdss[mask_valid_pixels, :]
 
-    return wave_sdss, snr_sdss, mask_sdss
+    np.savez_compressed(
+        filtered_cache_path,
+        wavelength=wave_sdss,
+        flux=flux_sdss,
+        mask=mask_sdss,
+        sigma_F=sigma_F_sdss,
+    )
 
+    return wave_sdss, sigma_F_sdss, mask_sdss
 
 
 def make_training_spectra_one_box(gridpoint_path, outfile_path, min_wavelength, max_wavelength, rng=None, total_num_spectra_per_file=10000):
@@ -95,26 +115,26 @@ def make_training_spectra_one_box(gridpoint_path, outfile_path, min_wavelength, 
 
     ####################### Load the SDSS spectra #######################
 
-    sdss_cache_path = "/pfs/10/project/bw21g005/ly_alpha_sbi_paper/SDSS_spectra/SDSS_support_files/spectra_cache.npz"
+    sdss_cache_path = "/pfs/10/project/bw21g005/ly_alpha_sbi_paper/SDSS_spectra/SDSS_support_files/"
 
-    _, snr_sdss, mask_sdss = load_sdss_snr(sdss_cache_path, wave_sim[0], wave_sim[-1], wave_sim.shape[0])
+    _, sigma_F_sdss, mask_sdss = load_sdss_sigma_F(sdss_cache_path, wave_sim[0], wave_sim[-1], wave_sim.shape[0])
 
     ####################### Add noise to simulated Spectra #######################
     if rng is None:
         rng = np.random
 
-    n_sdss, n_sim = snr_sdss.shape[0], flux_sim.shape[0]
+    n_sdss, n_sim = sigma_F_sdss.shape[0], flux_sim.shape[0]
     replace = n_sdss < n_sim  # only reuse SDSS spectra if there are not enough of them
 
     sample_idx = rng.choice(n_sdss, size=n_sim, replace=replace)
 
-    snr_appl = snr_sdss[sample_idx]
+    sigma_F_appl = sigma_F_sdss[sample_idx]
     mask_appl = mask_sdss[sample_idx]
 
-    assert snr_appl.shape == mask_appl.shape == flux_sim.shape, \
-        f"shapes {snr_appl.shape=} / {mask_appl.shape=} dont match {flux_sim.shape=}"
+    assert sigma_F_appl.shape == mask_appl.shape == flux_sim.shape, \
+        f"shapes {sigma_F_appl.shape=} / {mask_appl.shape=} dont match {flux_sim.shape=}"
 
-    noisy_flux_sim = add_noise_to_spectrum(flux_sim, snr_appl, mask_appl, rng=rng)
+    noisy_flux_sim = add_noise_to_spectrum(flux_sim, sigma_F_appl, mask_appl, rng=rng)
 
     print(f"{flux_sim.shape} -> {noisy_flux_sim.shape}, drawn from {n_sdss} SDSS spectra with {replace=}")
     print(f"masked pixel fraction: {1 - mask_appl.mean():.3f}, nan fraction in output: {np.isnan(noisy_flux_sim).mean():.3f}")
@@ -160,8 +180,8 @@ def make_training_spectra_one_box(gridpoint_path, outfile_path, min_wavelength, 
 
 
 def main():
-    base_path_test = "/pfs/10/project/bw21g005/ly_alpha_sbi_paper/L50n512_suite/gridpoint0"
-    out_path_test = "/pfs/10/project/bw21g005/ly_alpha_sbi_paper/ML_training_data_test/gridpoint0"
+    base_path_test = "/pfs/10/project/bw21g005/ly_alpha_sbi_paper/L50n512_suite/reference"
+    out_path_test = "/pfs/10/project/bw21g005/ly_alpha_sbi_paper/ML_training_data_test/reference"
     min_wavelength = 3800
     max_wavelength = 4500
 

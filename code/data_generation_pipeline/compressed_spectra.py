@@ -6,28 +6,6 @@ import tqdm
 from concurrent.futures import ProcessPoolExecutor
 
 
-def get_sdss_file_ids(path, snr_lowe_edge, snr_upper_edge=np.inf):
-    """ Get a list of (PLATE, MJD, FIBERID) from the SDSS BOSS Lyman alpha forest catalogue
-      of spectra with S/N in given range.
-
-    Args:
-        path (string): path to the catalogue file
-        snr_lowe_edge (float): lower filter for the signa to noise ratio of the spectra
-        snr_upper_edge (float, optional): upper filter for the signa to noise ratio of the spectra
-
-    Returns:
-        list: list of (PLATE, MJD, FIBERID) tuples for spectra in the SDSS BOSS Lyman alpha forest catalogue
-    """
-    lya_cat = Table.read(path)
-    pmf_list = []
-
-    for row in lya_cat:
-        if row["SNR"] > snr_lowe_edge and row["SNR"] < snr_upper_edge:
-            pmf_list.append((row["PLATE"], row["MJD"], row["FIBERID"]))
-
-    return pmf_list
-
-
 def build_common_grid(resid_lam_file, z_min=1.95, z_max=3.05):
     """Build a fixed wavelength grid (aligned to the resid grid) spanning the given
     Lyman-alpha absorption redshift range."""
@@ -113,10 +91,10 @@ def _process_one_spectrum(task):
 
     F[good_pixel] = (flux[good_pixel] * dla_corr[good_pixel]
                      / (cont[good_pixel] * resid[good_pixel]))
-    SIGMA_F[good_pixel] = np.sqrt(
+    SIGMA_F[good_pixel] = np.power(
         ivar[good_pixel] * resid[good_pixel]**2 * noise_corr[good_pixel]**2
-        * cont[good_pixel]**2 / dla_corr[good_pixel]**2
-    )
+        * cont[good_pixel]**2 / dla_corr[good_pixel]**2 
+    , -0.5)
 
     # Extra safety: drop any pixel that still isn't finite despite passing masks
     good_pixel = good_pixel & np.isfinite(F) & np.isfinite(SIGMA_F)
@@ -205,7 +183,7 @@ def build_and_save_spectra(resid_file_path, pmf_list, redshifts, output_path,
         wavelength=common_wavelength,
         flux=flux_matrix,
         mask=mask_matrix,
-        snr=sigma_matrix,          # keeping your original naming (this is sigma_F / per-pixel error)
+        sigma_F=sigma_matrix,
         redshift=z_array,
         pmf=pmf_array,
         valid_spectrum=valid_spectrum,
@@ -224,7 +202,7 @@ def load_spectra_cache(path):
             "wavelength": npz["wavelength"],
             "flux": npz["flux"],
             "mask": npz["mask"],
-            "snr": npz["snr"],
+            "sigma_F": npz["sigma_F"],
             "redshift": npz["redshift"],
             "pmf": npz["pmf"],
             "valid_spectrum": npz["valid_spectrum"],
