@@ -5,18 +5,20 @@ import math
 
 class SpectraTokenEmbedding(nn.Module):
     """
-    Linear Embedding for the input spectra
+    Linear Embedding for the input spectra. The flux value and the pixel quality are fed in as
+    two separate channels, so a bad pixel is distinguishable from a genuine zero flux pixel.
     """
     def __init__(self, embed_dim):
         super().__init__()
-        self.proj = nn.Linear(1, embed_dim)
+        self.proj = nn.Linear(2, embed_dim)
 
-    def forward(self, x):
+    def forward(self, x, quality):
         """
         x: (batch_size, len_spectra)
+        quality: (batch_size, len_spectra), per pixel quality, 0 for bad pixels
         return: (batch_size, len_spectra, d_model)
         """
-        x = x.unsqueeze(-1)
+        x = torch.stack([x, quality], dim=-1)
         return self.proj(x)
 
 
@@ -64,13 +66,20 @@ class MultiHeadAttention(nn.Module):
 
     def scaled_dot_product_attention(self, Q, K, V, mask=None):
         """
-        Q: (batch_size, len_spectra, num_heads, d_k)
-        K: (batch_size, len_spectra, num_heads, d_k)
-        V: (batch_size, len_spectra, num_heads, d_k)
-        return: (batch_size, len_spectra, num_heads, d_k)
+        Q: (batch_size, num_heads, len_spectra, d_k)
+        K: (batch_size, num_heads, len_spectra, d_k)
+        V: (batch_size, num_heads, len_spectra, d_k)
+        mask: (batch_size, len_spectra), True for valid pixels
+        return: (batch_size, num_heads, len_spectra, d_k)
         """
         # Calculate attention scores
         attn_score = torch.matmul(Q, K.transpose(-2, -1)) / math.sqrt(self.d_k)
+
+        # Bad pixels are masked out as keys, so they never contribute to any other pixel. The mask
+        # is broadcast over heads and query positions. finfo.min keeps a fully masked row finite,
+        # whereas -inf would turn it into NaN
+        if mask is not None:
+            attn_score = attn_score.masked_fill(~mask[:, None, None, :], torch.finfo(attn_score.dtype).min)
 
         # Softmax is applied to obtain attention probabilities
         attn_probs = torch.softmax(attn_score, dim=-1)
@@ -82,7 +91,7 @@ class MultiHeadAttention(nn.Module):
     def split_heads(self, x):
         """
         x: (batch_size, len_spectra, d_model)
-        return: (batch_size, len_spectra, num_heads, d_k)
+        return: (batch_size, num_heads, len_spectra, d_k)
         """
         batch_size, seq_length, d_model = x.size()
         return x.view(batch_size, seq_length, self.num_heads, self.d_k).transpose(2, 1)
@@ -100,6 +109,7 @@ class MultiHeadAttention(nn.Module):
         Q: (batch_size, len_spectra, d_model)
         K: (batch_size, len_spectra, d_model)
         V: (batch_size, len_spectra, d_model)
+        mask: (batch_size, len_spectra), True for valid pixels
         return: (batch_size, len_spectra, d_model)
         """
 
@@ -145,12 +155,13 @@ class EncoderLayer(nn.Module):
         self.norm2 = nn.LayerNorm(d_model)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x):
+    def forward(self, x, mask=None):
         """
         x: (batch_size, len_spectra, d_model)
+        mask: (batch_size, len_spectra), True for valid pixels
         return: (batch_size, len_spectra, d_model)
         """
-        attn_output = self.self_attn(x, x, x)
+        attn_output = self.self_attn(x, x, x, mask)
         x = self.norm1(x + self.dropout(attn_output))
         ff_output = self.feed_forward(x)
         x = self.norm2(x + self.dropout(ff_output))
@@ -167,13 +178,19 @@ class AttentionPooling(nn.Module):
         self.query = nn.Parameter(torch.randn(d_model))
         self.scale = math.sqrt(d_model)
 
-    def forward(self, x):
+    def forward(self, x, mask=None):
         """
         x: (batch_size, len_spectra, d_model)
+        mask: (batch_size, len_spectra), True for valid pixels
         return: (batch_size, d_model)
         """
 
         scores = torch.matmul(x, self.query) / self.scale
+
+        # Bad pixels are excluded from the weighted average, so they never reach the output head
+        if mask is not None:
+            scores = scores.masked_fill(~mask, torch.finfo(scores.dtype).min)
+
         attn_weights = torch.softmax(scores, dim=1)
 
         pooled = torch.sum(x * attn_weights.unsqueeze(-1), dim=1)
@@ -194,18 +211,30 @@ class Transformer(nn.Module):
         self.fc = nn.Linear(d_model, len_output)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, src):
+    def forward(self, src, mask=None):
         """
         src: (batch_size, len_spectra)
+        mask: (batch_size, len_spectra), True for valid pixels. If None all pixels are treated as valid
         return: (batch_size, len_output)
         """
-        input_embedded = self.dropout(self.positional_encoding(self.encoder_embedding(src)))
+        if mask is None:
+            mask = torch.ones_like(src, dtype=torch.bool)
+
+        # Bad pixels are NaN in the SDSS data. Masking the softmax weights alone does not keep them
+        # out, since 0 * NaN = NaN, so their values have to be replaced before the embedding
+        src = torch.where(mask, src, torch.zeros_like(src))
+
+        # Per pixel quality channel, currently just the binary mask. To use the SNR instead, replace
+        # this with torch.where(mask, snr, torch.zeros_like(snr)) so bad pixels stay at 0
+        quality = mask.to(src.dtype)
+
+        input_embedded = self.dropout(self.positional_encoding(self.encoder_embedding(src, quality)))
 
         enc_output = input_embedded
         for enc_layer in self.encoding_layers:
-            enc_output = enc_layer(enc_output)
+            enc_output = enc_layer(enc_output, mask)
 
-        pooled = self.pooling(enc_output)
+        pooled = self.pooling(enc_output, mask)
 
         output = self.fc(pooled)
         return output

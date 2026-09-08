@@ -180,17 +180,22 @@ def make_training_spectra_one_box(gridpoint_path, outfile_path, min_wavelength, 
 
 
 def main():
-    base_path_test = "/pfs/10/project/bw21g005/ly_alpha_sbi_paper/L50n512_suite/reference"
-    out_path_test = "/pfs/10/project/bw21g005/ly_alpha_sbi_paper/ML_training_data_test/reference"
     min_wavelength = 3800
     max_wavelength = 4500
 
-    make_training_spectra_one_box(base_path_test, out_path_test, min_wavelength, max_wavelength)
+    gp_paths = [f"/pfs/10/project/bw21g005/ly_alpha_sbi_paper/L50n512_suite/gridpoint{i}" for i in range(50)]
+    out_paths = [f"/pfs/10/project/bw21g005/ly_alpha_sbi_paper/ML_training_data_test/gridpoint{i}" for i in range(50)]
 
-    spec_file_test = SpectraCustomHDF5(out_path_test + "_train.hdf5")
-    waves, fluxes, masks = spec_file_test.get_all_spectra_with_mask()
+    out_paths.append("/pfs/10/project/bw21g005/ly_alpha_sbi_paper/ML_training_data_test/reference")
+    gp_paths.append("/pfs/10/project/bw21g005/ly_alpha_sbi_paper/L50n512_suite/reference")
 
-    print(f"Loaded {fluxes.shape[0]} spectra from {out_path_test + '_train.hdf5'} with {waves.shape=}, {fluxes.shape=}, {masks.shape=}")
+    for i in range(len(gp_paths)):
+        base_path_it = gp_paths[i]
+        out_path_it = out_paths[i]
+
+        print(f"Making training dataset for {base_path_it}")
+
+        make_training_spectra_one_box(base_path_it, out_path_it, min_wavelength, max_wavelength)
 
 
 

@@ -3,44 +3,27 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import yaml
-from dataset_functions import get_sdss_spectra, get_shuffled_and_split_datasets, get_spectra_reference_point
+from dataset_functions import get_shuffled_and_split_datasets, get_spectra_reference_point
 from transformer_model import Transformer
 from plotting_functions import make_corner_plot
 
 
-def get_sdss_spectra_for_inference(cat_path, resid_file, snr_filter):
-    """ Collect the SDSS spectra above a certain snr for inference
+def get_sdss_spectra_for_inference(cache_path):
 
-    Args:
-        cat_path (string): path to the custom catalogue file
-        resid_file (string): path to the resid file
-        snr_filter (float): signal to noise ratio that is used as lower filter
+    with np.load(cache_path) as npz:
+        data_sdss = {
+            "wavelength": npz["wavelength"],
+            "flux": npz["flux"],
+            "mask": npz["mask"],
+            "snr": npz["snr"]
+            }
 
-    Returns:
-        torch.Tensor: Tensor containing the SDSS spectra
-    """
-    cat = np.load(cat_path)
-    snrs_cat = cat["SNR"]
-    pmfs_cat = cat["PMF"]
+    specs = torch.Tensor(data_sdss["flux"])
+    mask = torch.from_numpy(data_sdss["mask"]).to(torch.bool) # need to retain the datatype, so cant use torch.Tensor
 
-    pmf_list = []
-    for i in range(len(snrs_cat)):
-        if snrs_cat[i] > snr_filter:
-            pmf_list.append(pmfs_cat[i])
+    assert torch.isfinite(specs[mask]).all(), "X contains NaN or Inf values in the valid pixels"
 
-    print(len(pmf_list))
-
-    # Note: this function might take a couple of minutes to run as it has to open thousands of data files
-    _, _, fluxes_boss_specs = get_sdss_spectra(resid_file, pmf_list)
-
-    np_specs = []
-    for i, spec in enumerate(fluxes_boss_specs):
-        if len(spec) == 402:
-            np_specs.append(np.append(spec, spec[-1]))
-
-    specs = torch.Tensor(np.array(np_specs))
-
-    return specs
+    return specs, mask
 
 
 def initialize_trafo_from_saved_state(config_path, len_in, len_out, state_path, device):
@@ -81,7 +64,7 @@ def initialize_trafo_from_saved_state(config_path, len_in, len_out, state_path, 
     return model, criterion, optimizer
 
 
-def eval_model(model, X, device):
+def eval_model(model, X, X_mask, device):
     """ Does model forward pass with given data X
 
     Args:
@@ -96,30 +79,29 @@ def eval_model(model, X, device):
 
     with torch.no_grad():
         X = X.to(device)
+        X_mask = X_mask.to(device)
 
-        y_pred = model(X)
+        y_pred = model(X, X_mask)
 
-    return y_pred
+    return y_pred.cpu()
 
 
 def main():
-    model_name = "realistic_noise_model_snr2"
-    suite_of_spectra = "L25n256_realistic_noise_v2_snr2"
-    snr_filter = 2
+    model_name = "test_model"
+    suite_of_spectra = "ML_training_data_test"
 
-    cat_path = "SDSS_support_files/Custom_cat.npz"
-    resid_file = "SDSS_support_files/residcorr_v5_4_45.dat"
+    cache_path = "/pfs/10/project/bw21g005/ly_alpha_sbi_paper/SDSS_spectra/SDSS_support_files/spectra_filtered_cache.npz"
     config_path = f"log_files/{model_name}_config.yaml"
     state_path = f"model_states/{model_name}_weights.pt"
     sdss_corner_path = f"plots/{model_name}_SDSS_cornerplot.pdf"
     ref_corner_path = f"plots/{model_name}_refbox_cornerplot.pdf"
 
-    sdss_specs = get_sdss_spectra_for_inference(cat_path, resid_file, snr_filter)
-    n_specs = sdss_specs.shape[0]
-    if n_specs > 10000:
-        n_specs = 10000
-    ref_box_specs, _ = get_spectra_reference_point(suite_of_spectra, n_spectra=n_specs)
+    sdss_specs, sdss_masks = get_sdss_spectra_for_inference(cache_path)
+    ref_box_specs, ref_box_masks, _ = get_spectra_reference_point(suite_of_spectra)
     ref_box_specs = torch.Tensor(ref_box_specs)
+    ref_box_masks = torch.from_numpy(ref_box_masks).to(torch.bool) # need to retain the datatype, so cant use torch.Tensor
+
+    assert sdss_specs.shape[1] == ref_box_specs.shape[1], f"SDSS and reference box spectra have different lengths: {sdss_specs.shape[1]} vs {ref_box_specs.shape[1]}"
 
     input_len = sdss_specs.shape[1]
     output_len = 4
@@ -128,11 +110,14 @@ def main():
 
     model, _, _ = initialize_trafo_from_saved_state(config_path, input_len, output_len, state_path, device)
 
-    y_pred_sdss = eval_model(model, sdss_specs, device)
-    y_pred_ref = eval_model(model, ref_box_specs, device)
+    y_pred_sdss = eval_model(model, sdss_specs, sdss_masks, device)
+    y_pred_ref = eval_model(model, ref_box_specs, ref_box_masks, device)
+
+    with open(config_path) as f:
+        params = yaml.safe_load(f)
 
     # TODO: This is an embarrassingly inefficient way to get the y_mean and y_std. Should probably change this in the future
-    _, _, _, y_mean, y_std = get_shuffled_and_split_datasets(suite_of_spectra, True)
+    _, _, _, y_mean, y_std = get_shuffled_and_split_datasets(suite_of_spectra, params['reduced_dataset'])
 
     y_pred_sdss, y_pred_ref = y_pred_sdss*y_std + y_mean, y_pred_ref*y_std + y_mean
     y_pred_sdss, y_pred_ref = y_pred_sdss.numpy(), y_pred_ref.numpy()

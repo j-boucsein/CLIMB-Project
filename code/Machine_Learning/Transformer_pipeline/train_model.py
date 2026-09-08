@@ -41,12 +41,13 @@ def train_one_epoch(model, loader, optimizer, criterion, device):
     model.train()
 
     total_loss = 0.0
-    for X, y in loader:
+    for X, X_mask, y in loader:
         X = X.to(device, non_blocking=True)
+        X_mask = X_mask.to(device, non_blocking=True)
         y = y.to(device, non_blocking=True)
         optimizer.zero_grad()
 
-        y_pred = model(X)
+        y_pred = model(X, X_mask)
         loss = criterion(y_pred, y)
 
         loss.backward()
@@ -78,11 +79,12 @@ def eval_model(model, loader, criterion, device, return_predictions=False):
 
     total_loss = 0.0
     with torch.no_grad():
-        for X, y in loader:
+        for X, X_mask, y in loader:
             X = X.to(device, non_blocking=True)
+            X_mask = X_mask.to(device, non_blocking=True)
             y = y.to(device, non_blocking=True)
 
-            y_pred = model(X)
+            y_pred = model(X, X_mask)
             loss = criterion(y_pred, y)
 
             total_loss += loss.item() * X.size(0)
@@ -207,7 +209,7 @@ def main(config_path):
     train_loader, eval_loader, test_loader, y_mean, y_std = collect_dataloaders(config_path)
 
     len_spectra = train_loader.dataset[0][0].shape[0]
-    len_output = train_loader.dataset[0][1].shape[0]
+    len_output = train_loader.dataset[0][2].shape[0]
 
     model, criterion, optimizer = initiate_transformer(config_path, len_spectra, len_output)
     model.to(device)

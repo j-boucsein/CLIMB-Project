@@ -28,39 +28,51 @@ def build_dataset_for_gridpoints(gridpoints, suite_of_spectra, shuffle_and_split
         np.array(X): Array of spectra (flux values)
         np.array(y): Array of cosmo parameters (for each spectrum)
     """
-    X, y = [], []
+    X, X_mask, y = [], [], []
 
     for i in gridpoints:
-        path_to_file = f"/vera/ptmp/gc/jerbo/training_data/{suite_of_spectra}/gp{i}_spectra_{shuffle_and_split_type}.hdf5"
+        path_to_file = f"/pfs/10/project/bw21g005/ly_alpha_sbi_paper/{suite_of_spectra}/gridpoint{i}_{shuffle_and_split_type}.hdf5"
         spec_file = SpectraCustomHDF5(path_to_file)
-        _, flux = spec_file.get_all_spectra()  
+        _, flux, mask = spec_file.get_all_spectra_with_mask()  
+
+        assert mask is not None, f"No masks found in {path_to_file=}"
         
         if reduced_dataset:
-            np.random.shuffle(flux)
             flux = flux[:1000]  # Train on only 10% of the available data
+            mask = mask[:1000]
 
         metadata = spec_file.get_header()
         params = metadata["Omega0"], metadata["OmegaBaryon"], metadata["OmegaLambda"], metadata["HubbleParam"]
 
-        for spec in flux:
-            X.append(spec)
+        for j in range(len(flux)):
+            X.append(flux[j])
+            X_mask.append(mask[j])
             y.append(params)
 
-    return np.array(X), np.array(y)
+    return np.array(X), np.array(X_mask, dtype=bool), np.array(y)
 
 
 class SpectraCosmoDataset(Dataset):
     """Class that defines a custom dataset for the spectra data
+
+    Args:
+        X (np.array): Array of spectra (flux values)
+        mask (np.array): Boolean array, True for valid pixels. Same shape as X
+        y (np.array): Array of cosmo parameters (for each spectrum)
+        dtype (torch.dtype, optional): dtype used for X and y
     """
-    def __init__(self, X, y, dtype=torch.float32):
+    def __init__(self, X, mask, y, dtype=torch.float32):
+        mask = np.asarray(mask, dtype=bool)  # integer masks would index rows instead of pixels
+        assert np.isfinite(X[mask]).all(), "X contains NaN or Inf values in the valid pixels"
         self.X = torch.tensor(X, dtype=dtype)
+        self.mask = torch.tensor(mask, dtype=torch.bool)
         self.y = torch.tensor(y, dtype=dtype)
 
     def __len__(self):
         return self.X.shape[0]
 
     def __getitem__(self, idx):
-        return self.X[idx], self.y[idx]
+        return self.X[idx], self.mask[idx], self.y[idx]
     
 
 def _normalize(dataset, y_mean, y_std):
@@ -91,13 +103,13 @@ def get_shuffled_and_split_datasets(suite_of_spectra, reduced_dataset=False):
 
     gps_list = [i for i in range(50)]
 
-    X_train, y_train = build_dataset_for_gridpoints(gps_list, suite_of_spectra, "train", reduced_dataset)
-    X_eval, y_eval = build_dataset_for_gridpoints(gps_list, suite_of_spectra, "eval", reduced_dataset)
-    X_test, y_test = build_dataset_for_gridpoints(gps_list, suite_of_spectra, "test", reduced_dataset)
+    X_train, X_mask_train, y_train = build_dataset_for_gridpoints(gps_list, suite_of_spectra, "train", reduced_dataset)
+    X_eval, X_mask_eval, y_eval = build_dataset_for_gridpoints(gps_list, suite_of_spectra, "eval", reduced_dataset)
+    X_test, X_mask_test, y_test = build_dataset_for_gridpoints(gps_list, suite_of_spectra, "test", reduced_dataset)
 
-    train_dataset = SpectraCosmoDataset(X_train, y_train)
-    eval_dataset  = SpectraCosmoDataset(X_eval,  y_eval)
-    test_dataset  = SpectraCosmoDataset(X_test,  y_test)
+    train_dataset = SpectraCosmoDataset(X_train, X_mask_train, y_train)
+    eval_dataset  = SpectraCosmoDataset(X_eval,  X_mask_eval,  y_eval)
+    test_dataset  = SpectraCosmoDataset(X_test,  X_mask_test,  y_test)
 
     y_mean = train_dataset.y.mean(dim=0)
     y_std  = train_dataset.y.std(dim=0) + 1e-8
@@ -131,118 +143,7 @@ def get_sdss_file_ids(path, snr_lowe_edge, snr_upper_edge=np.inf):
     return pmf_list
 
 
-def get_sdss_spectra(resid_file_path, pmf_list, speclya_basepath="/pfs/10/project/bw21g005/ly_alpha_sbi_paper/SDSS_spectra/BOSSLyaDR9_spectra", min_wavelength=3600.0, max_wavelength=3950.0, return_pmf_list=False):
-    """ Calculates corrected SDSS BOSS Lyman alpha forest spectra from given pmf list and paths within the given
-    wavelength range. Note: If pmf_list has thousands of entries, this function might take a couple of minutes to
-    run, as it has to open a data file for every spectrum.
-
-    Args:
-        resid_file_path (string): path to the resid file
-        pmf_list (list): list of (PLATE, MJD, FIBERID) tuples. These set which spectra to load from the survey
-        speclya_basepath (str, optional): Basepath where the SDSS Survey data is. Defaults to "/virgotng/mpia/obs/SDSS/BOSSLyaDR9_spectra".
-        min_wavelength (float, optional): Lower cutoff for the wavelengths. Defaults to 3600.0.
-        max_wavelength (float, optional): Upper cutoff for the wavelengths. Defaults to 3950.0.
-        return_pmf_list (bool, optional): Whether to return the pmf list of the used spectra. This can be used to make a custom catalogue
-
-    Returns:
-        snrs (list): List of np.arrays containing the SNR per pixel for every spectrum
-        wavelengths_boss_specs (list): List of np.arrays of wavelengths for every spectrum 
-        fluxes_boss_specs (list): List of np.arrays of fluxes for every spectrum
-    """
-    # -------- Read RESID File --------
-    resid_file = resid_file_path
-    resid = []
-    resid_lam = []
-
-    with open(resid_file) as rfile:
-        reader = csv.reader(rfile, delimiter=" ")
-        for i, row in enumerate(reader):
-            if i != 0:
-                resid.append(float(row[-1]))
-                resid_lam.append(float(row[1]))
-
-    resid_lam_file = np.array(resid_lam)
-    resid_file = np.array(resid)
-    # --------------------------------
-
-    wavelengths_boss_specs = []
-    fluxes_boss_specs = []
-    snrs = []
-    pmf_return_list = []
-
-    for plate, mjd, fiber in tqdm.tqdm(pmf_list):
-        # -------- Read Spectra file --------
-        fiber_str = f"{fiber:04d}"
-        filename = f"speclya-{plate}-{mjd}-{fiber_str}.fits"
-        file_path = f"{speclya_basepath}/{plate}/" + filename
-
-        with fits.open(file_path) as hdul:
-            data = hdul[1].data
-
-            loglam   = data["LOGLAM"]
-            flux     = data["FLUX"]
-            ivar     = data["IVAR"]
-            cont     = data["CONT"]
-            dla_corr = data["DLA_CORR"]
-            mask_comb = data["MASK_COMB"]
-            dla_corr = data["DLA_CORR"]
-            noise_corr = data["NOISE_CORR"]
-
-        # -------- Select correct range for Resids --------
-
-        i0 = np.where(np.isclose(resid_lam_file, loglam[0]))[0][0]
-        i1 = np.where(np.isclose(resid_lam_file, loglam[-1]))[0][0] + 1
-        resid = resid_file[i0:i1]
-
-        # -------------------------------------------------
-
-        # Convert wavelengths to angstroms
-        wavelength = 10**loglam
-
-        # SDSS-recommended pixel mask
-        good_pixel = (
-            (mask_comb == 0) &
-            (ivar > 0)
-        )
-
-        # Initialize F, SIGMA_F with NaNs
-        F = np.full_like(flux, np.nan)
-        SIGMA_F = np.full_like(flux, np.nan)
-
-        # Compute F and SIGMA_F ONLY for good pixels
-        F[good_pixel] = (flux[good_pixel] * dla_corr[good_pixel] / ((cont[good_pixel] * resid[good_pixel])))
-        SIGMA_F[good_pixel] = np.sqrt(ivar[good_pixel] * resid[good_pixel]**2 * noise_corr[good_pixel]**2 * cont[good_pixel]**2 / dla_corr[good_pixel]**2)
-
-        # -------- Select Lyα forest region --------
-        forest_mask = (
-            (wavelength >= min_wavelength) &
-            (wavelength <= max_wavelength)
-        )
-
-        wave_sel = wavelength[forest_mask]
-        F_sel    = F[forest_mask]
-        Sigma_F_sel = SIGMA_F[forest_mask]
-
-        # -------- Filter out spectra with Nans and Infs --------
-
-        if np.any(np.isnan(F_sel)) or (not np.all(np.isfinite(F_sel))):
-            continue
-
-        # -------------------------------------------------------
-        
-        snrs.append(Sigma_F_sel)
-        wavelengths_boss_specs.append(wave_sel)
-        fluxes_boss_specs.append(F_sel)
-        if return_pmf_list:
-            pmf_return_list.append((plate, mjd, fiber))
-
-    if return_pmf_list:
-        return snrs, wavelengths_boss_specs, fluxes_boss_specs, pmf_return_list
-    else:
-        return snrs, wavelengths_boss_specs, fluxes_boss_specs
-
-
-def get_spectra_reference_point(suite_of_spectra, n_spectra=None):
+def get_spectra_reference_point(suite_of_spectra):
     """ Load the spectra and cosmo pars from the reference box of a suit of spectra
 
     Args:
@@ -254,26 +155,47 @@ def get_spectra_reference_point(suite_of_spectra, n_spectra=None):
         y (np.array): Array of arrays of cosmo params of all spectra (Note: this will be highly
                       redundent here and is only in this form to match the usual data structure)
     """
-    X, y = [], []
+    X, X_mask, y = [], [], []
 
-    path_to_file = f"/vera/ptmp/gc/jerbo/training_data/{suite_of_spectra}/reference_point_spectra.hdf5"
-    spec_file = SpectraCustomHDF5(path_to_file)
-    _, flux = spec_file.get_all_spectra()  
+    path_to_file_base = f"/pfs/10/project/bw21g005/ly_alpha_sbi_paper/{suite_of_spectra}/reference"
+    train_path = path_to_file_base + "_train.hdf5"
+    test_path = path_to_file_base + "_test.hdf5"
+    eval_path = path_to_file_base + "_eval.hdf5"
 
-    if n_spectra is not None:
-        np.random.shuffle(flux)
-        flux = flux[:n_spectra]  # Train on only 10% of the available data
+    spec_file_train = SpectraCustomHDF5(train_path)
+    spec_file_test = SpectraCustomHDF5(test_path)
+    spec_file_eval = SpectraCustomHDF5(eval_path)
 
-    metadata = spec_file.get_header()
+    _, flux_train, mask_train = spec_file_train.get_all_spectra_with_mask()  
+    _, flux_test, mask_test = spec_file_test.get_all_spectra_with_mask()  
+    _, flux_eval, mask_eval = spec_file_eval.get_all_spectra_with_mask()  
+
+    assert (mask_train is not None) and (mask_test is not None) and (mask_eval is not None), f"No masks found in {path_to_file_base=}"
+
+    metadata = spec_file_train.get_header()
     params = metadata["Omega0"], metadata["OmegaBaryon"], metadata["OmegaLambda"], metadata["HubbleParam"]
 
-    for spec in flux:
-        X.append(spec)
+    # not my proudest work, but the simplest solution atm...
+    for i in range(len(flux_train)):
+        X.append(flux_train[i])
+        X_mask.append(mask_train[i])
         y.append(params)
 
-    X, y = np.array(X), np.array(y)
+    for i in range(len(flux_test)):
+        X.append(flux_test[i])
+        X_mask.append(mask_test[i])
+        y.append(params)
 
-    return X, y
+    for i in range(len(flux_eval)):
+        X.append(flux_eval[i])
+        X_mask.append(mask_eval[i])
+        y.append(params)
+
+    X, X_mask, y = np.array(X), np.array(X_mask, dtype=bool), np.array(y)
+
+    assert np.isfinite(X[X_mask]).all(), "X contains NaN or Inf values in the valid pixels"
+
+    return X, X_mask, y
 
 
 if __name__ == "__main__":
