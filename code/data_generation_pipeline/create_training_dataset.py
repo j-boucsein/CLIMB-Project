@@ -1,6 +1,8 @@
 import os
 import numpy as np
-from spectra_stitching import load_forest_spectra, hash_spectra_args
+import hashlib
+import json
+from spectra_stitching import load_forest_spectra
 from compressed_spectra import load_spectra_cache
 
 # This is not super pretty, but I think this is the best way to import stuff from ..util?
@@ -15,6 +17,19 @@ from util.spectra_helpers import SpectraCustomHDF5
 
 def find_closest_index(array, value):
     return int(np.argmin(np.abs(array - value)))
+
+
+def hash_args(unfiltered_cache_path, min_wavelength, max_wavelength, target_length, n_valid_pixels_min, max_sigma_f, n_chars=16):
+
+    args = {
+        "unfiltered_cache_path": str(unfiltered_cache_path), # TODO: not sure if i can put str into the sha256?
+        "wavelength_range": [float(min_wavelength), float(max_wavelength)],
+        "target_length": int(target_length),
+        "n_valid_pixels_min": int(n_valid_pixels_min),
+        "max_sigma_f": float(max_sigma_f)
+    }
+
+    return hashlib.sha256(json.dumps(args, sort_keys=True).encode()).hexdigest()[:n_chars]
 
 
 def add_noise_to_spectrum(spec, sigma_F, mask=None, fill_value=np.nan, rng=None):
@@ -35,10 +50,13 @@ def add_noise_to_spectrum(spec, sigma_F, mask=None, fill_value=np.nan, rng=None)
     return noisy_spec
 
 
-def load_sdss_sigma_F(cache_path, min_wavelength, max_wavelength, target_length, n_valid_pixels_min=100):
+def load_sdss_sigma_F(cache_path, min_wavelength, max_wavelength, target_length, n_valid_pixels_min=100, max_sigma_f=0.5):
 
-    filtered_cache_path = os.path.join(cache_path, "spectra_filtered_cache.npz")
     unfiltered_cache_path = os.path.join(cache_path, "spectra_cache.npz")
+
+    args_hash = hash_args(cache_path, min_wavelength, max_wavelength, target_length, n_valid_pixels_min, max_sigma_f)
+
+    filtered_cache_path = os.path.join(cache_path, f"spectra_filtered_{args_hash}.npz")
 
     if os.path.isfile(filtered_cache_path):
         with np.load(filtered_cache_path) as npz:
@@ -87,6 +105,16 @@ def load_sdss_sigma_F(cache_path, min_wavelength, max_wavelength, target_length,
     sigma_F_sdss = sigma_F_sdss[mask_valid_pixels, :]
     mask_sdss = mask_sdss[mask_valid_pixels, :]
 
+    ####################### Sigma Flux filter #######################
+
+    mask_valid_sigma_F_spectra = np.nanmean(sigma_F_sdss, axis=1) <= max_sigma_f
+
+    print(np.nanmean(sigma_F_sdss, axis=1).shape, mask_valid_sigma_F_spectra.shape)
+
+    flux_sdss = flux_sdss[mask_valid_sigma_F_spectra, :]
+    sigma_F_sdss = sigma_F_sdss[mask_valid_sigma_F_spectra, :]
+    mask_sdss = mask_sdss[mask_valid_sigma_F_spectra, :]
+
     np.savez_compressed(
         filtered_cache_path,
         wavelength=wave_sdss,
@@ -98,26 +126,29 @@ def load_sdss_sigma_F(cache_path, min_wavelength, max_wavelength, target_length,
     return wave_sdss, sigma_F_sdss, mask_sdss
 
 
-def make_training_spectra_one_box(gridpoint_path, outfile_path, min_wavelength, max_wavelength, rng=None, total_num_spectra_per_file=10000):
+def make_training_spectra_one_box(gridpoint_path, outfile_path, min_wavelength, max_wavelength, args_hash, max_sigma_f, no_mask=False, no_noise=False, rng=None, total_num_spectra_per_file=10000):
 
     n_train = int(total_num_spectra_per_file * 0.7)
     n_eval = int(total_num_spectra_per_file * 0.15)
 
-    ####################### Load the saved Forest spectra #######################
-    wavelength_range = (min_wavelength, max_wavelength)
-    redshifts_to_use = [2.0, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9, 3.0]
-    args_hash = hash_spectra_args(wavelength_range, redshifts_to_use, None, total_num_spectra_per_file, 1215.67, 123)
-    
     sim_spec_path = os.path.join(gridpoint_path, "lya_forest_spectra", f"forest_spectra_{args_hash}.hdf5")
 
     print(f"Loading Simulated Forest Spectra from {sim_spec_path}")
     wave_sim, flux_sim, _ = load_forest_spectra(sim_spec_path)
 
+    wave_range_sel = (min_wavelength <= wave_sim) & (max_wavelength >= wave_sim)
+
+    wave_sim, flux_sim = wave_sim[wave_range_sel], flux_sim[:, wave_range_sel]
+
     ####################### Load the SDSS spectra #######################
 
     sdss_cache_path = "/pfs/10/project/bw21g005/ly_alpha_sbi_paper/SDSS_spectra/SDSS_support_files/"
 
-    _, sigma_F_sdss, mask_sdss = load_sdss_sigma_F(sdss_cache_path, wave_sim[0], wave_sim[-1], wave_sim.shape[0])
+    _, sigma_F_sdss, mask_sdss = load_sdss_sigma_F(sdss_cache_path, wave_sim[0], wave_sim[-1], wave_sim.shape[0], n_valid_pixels_min=100, max_sigma_f=max_sigma_f) # TODO: remove the 257 here - only for testing
+
+    # if no_mask, force the entire mask to be True
+    if no_mask:
+        mask_sdss = np.full_like(mask_sdss, True, dtype=bool)
 
     ####################### Add noise to simulated Spectra #######################
     if rng is None:
@@ -134,7 +165,12 @@ def make_training_spectra_one_box(gridpoint_path, outfile_path, min_wavelength, 
     assert sigma_F_appl.shape == mask_appl.shape == flux_sim.shape, \
         f"shapes {sigma_F_appl.shape=} / {mask_appl.shape=} dont match {flux_sim.shape=}"
 
-    noisy_flux_sim = add_noise_to_spectrum(flux_sim, sigma_F_appl, mask_appl, rng=rng)
+    # if no_noise=False, add noise to the spectrum
+    if no_noise:
+        noisy_spec = np.full(flux_sim.shape, np.nan, dtype=float)
+        noisy_spec[mask_appl] = flux_sim[mask_appl]
+    else:
+        noisy_flux_sim = add_noise_to_spectrum(flux_sim, sigma_F_appl, mask_appl, rng=rng)
 
     print(f"{flux_sim.shape} -> {noisy_flux_sim.shape}, drawn from {n_sdss} SDSS spectra with {replace=}")
     print(f"masked pixel fraction: {1 - mask_appl.mean():.3f}, nan fraction in output: {np.isnan(noisy_flux_sim).mean():.3f}")
@@ -180,13 +216,23 @@ def make_training_spectra_one_box(gridpoint_path, outfile_path, min_wavelength, 
 
 
 def main():
-    min_wavelength = 3800
-    max_wavelength = 4500
+    min_wavelength = 3600
+    max_wavelength = 3950
+    max_sigma_f = 0.2
+    no_noise = False
+    no_mask = True
+    hash_spectra_files = "e16590fc78e11efb"
+
+    traing_set_folder_name = "short_SNR5_no_mask_multi_snaps"
+
+    path_training_set_foler = f"ML_test_datasets/{traing_set_folder_name}"
+
+    os.makedirs(f"/pfs/10/project/bw21g005/ly_alpha_sbi_paper/{path_training_set_foler}", exist_ok=True)
 
     gp_paths = [f"/pfs/10/project/bw21g005/ly_alpha_sbi_paper/L50n512_suite/gridpoint{i}" for i in range(50)]
-    out_paths = [f"/pfs/10/project/bw21g005/ly_alpha_sbi_paper/ML_training_data_test/gridpoint{i}" for i in range(50)]
+    out_paths = [f"/pfs/10/project/bw21g005/ly_alpha_sbi_paper/{path_training_set_foler}/gridpoint{i}" for i in range(50)]
 
-    out_paths.append("/pfs/10/project/bw21g005/ly_alpha_sbi_paper/ML_training_data_test/reference")
+    out_paths.append(f"/pfs/10/project/bw21g005/ly_alpha_sbi_paper/{path_training_set_foler}/reference")
     gp_paths.append("/pfs/10/project/bw21g005/ly_alpha_sbi_paper/L50n512_suite/reference")
 
     for i in range(len(gp_paths)):
@@ -195,7 +241,7 @@ def main():
 
         print(f"Making training dataset for {base_path_it}")
 
-        make_training_spectra_one_box(base_path_it, out_path_it, min_wavelength, max_wavelength)
+        make_training_spectra_one_box(base_path_it, out_path_it, min_wavelength, max_wavelength,  args_hash=hash_spectra_files, max_sigma_f=max_sigma_f, no_mask=no_mask, no_noise=no_noise)
 
 
 
