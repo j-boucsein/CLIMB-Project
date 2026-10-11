@@ -2,7 +2,7 @@ import os
 import numpy as np
 import hashlib
 import json
-from spectra_stitching import load_forest_spectra
+from spectra_stitching import load_forest_spectra, forest_spectra_path, SPLITS
 from compressed_spectra import load_spectra_cache
 
 # This is not super pretty, but I think this is the best way to import stuff from ..util?
@@ -45,7 +45,7 @@ def add_noise_to_spectrum(spec, sigma_F, mask=None, fill_value=np.nan, rng=None)
 
     noisy_spec = np.full(spec.shape, fill_value, dtype=float)
     noisy_spec[valid] = spec[valid] + rng.normal(0.0, sigma_F[valid])
-    noisy_spec[valid & (noisy_spec < 0)] = 0
+    # noisy_spec[valid & (noisy_spec < 0)] = 0
 
     return noisy_spec
 
@@ -126,71 +126,10 @@ def load_sdss_sigma_F(cache_path, min_wavelength, max_wavelength, target_length,
     return wave_sdss, sigma_F_sdss, mask_sdss
 
 
-def make_training_spectra_one_box(gridpoint_path, outfile_path, min_wavelength, max_wavelength, args_hash, max_sigma_f, no_mask=False, no_noise=False, rng=None, total_num_spectra_per_file=10000):
+def make_training_spectra_one_box(gridpoint_path, outfile_path, min_wavelength, max_wavelength, args_hash, max_sigma_f, no_mask=False, no_noise=False, rng=None):
 
-    n_train = int(total_num_spectra_per_file * 0.7)
-    n_eval = int(total_num_spectra_per_file * 0.15)
-
-    sim_spec_path = os.path.join(gridpoint_path, "lya_forest_spectra", f"forest_spectra_{args_hash}.hdf5")
-
-    print(f"Loading Simulated Forest Spectra from {sim_spec_path}")
-    wave_sim, flux_sim, _ = load_forest_spectra(sim_spec_path)
-
-    wave_range_sel = (min_wavelength <= wave_sim) & (max_wavelength >= wave_sim)
-
-    wave_sim, flux_sim = wave_sim[wave_range_sel], flux_sim[:, wave_range_sel]
-
-    ####################### Load the SDSS spectra #######################
-
-    sdss_cache_path = "/pfs/10/project/bw21g005/ly_alpha_sbi_paper/SDSS_spectra/SDSS_support_files/"
-
-    _, sigma_F_sdss, mask_sdss = load_sdss_sigma_F(sdss_cache_path, wave_sim[0], wave_sim[-1], wave_sim.shape[0], n_valid_pixels_min=100, max_sigma_f=max_sigma_f) # TODO: remove the 257 here - only for testing
-
-    # if no_mask, force the entire mask to be True
-    if no_mask:
-        mask_sdss = np.full_like(mask_sdss, True, dtype=bool)
-
-    ####################### Add noise to simulated Spectra #######################
     if rng is None:
         rng = np.random
-
-    n_sdss, n_sim = sigma_F_sdss.shape[0], flux_sim.shape[0]
-    replace = n_sdss < n_sim  # only reuse SDSS spectra if there are not enough of them
-
-    sample_idx = rng.choice(n_sdss, size=n_sim, replace=replace)
-
-    sigma_F_appl = sigma_F_sdss[sample_idx]
-    mask_appl = mask_sdss[sample_idx]
-
-    assert sigma_F_appl.shape == mask_appl.shape == flux_sim.shape, \
-        f"shapes {sigma_F_appl.shape=} / {mask_appl.shape=} dont match {flux_sim.shape=}"
-
-    # if no_noise=False, add noise to the spectrum
-    if no_noise:
-        noisy_spec = np.full(flux_sim.shape, np.nan, dtype=float)
-        noisy_spec[mask_appl] = flux_sim[mask_appl]
-    else:
-        noisy_flux_sim = add_noise_to_spectrum(flux_sim, sigma_F_appl, mask_appl, rng=rng)
-
-    print(f"{flux_sim.shape} -> {noisy_flux_sim.shape}, drawn from {n_sdss} SDSS spectra with {replace=}")
-    print(f"masked pixel fraction: {1 - mask_appl.mean():.3f}, nan fraction in output: {np.isnan(noisy_flux_sim).mean():.3f}")
-
-    ####################### Split into train, eval and test sets #######################
-    n_total = noisy_flux_sim.shape[0]
-    perm = rng.permutation(n_total)
-
-    noisy_flux_sim = noisy_flux_sim[perm]
-    mask_appl = mask_appl[perm]
-
-    waves_train = waves_eval = waves_test = wave_sim
-
-    fluxes_train, masks_train = noisy_flux_sim[:n_train], mask_appl[:n_train]
-    fluxes_eval, masks_eval = noisy_flux_sim[n_train:n_train + n_eval], mask_appl[n_train:n_train + n_eval]
-    fluxes_test, masks_test = noisy_flux_sim[n_train + n_eval:], mask_appl[n_train + n_eval:]
-
-    print(f"Training: {waves_train.shape}, {fluxes_train.shape}, {masks_train.shape}")
-    print(f"Evaluation: {waves_eval.shape}, {fluxes_eval.shape}, {masks_eval.shape}")
-    print(f"Test: {waves_test.shape}, {fluxes_test.shape}, {masks_test.shape}")
 
     ####################### collect the metadata for the file #######################
     Omega0, OmegaBaryon, OmegaLambda, HubbleParam = get_cosmo_parameters(gridpoint_path)
@@ -202,28 +141,73 @@ def make_training_spectra_one_box(gridpoint_path, outfile_path, min_wavelength, 
         "HubbleParam": HubbleParam
     }
 
-    outfile_path_train = outfile_path + "_train.hdf5"
-    outfile_path_eval = outfile_path + "_eval.hdf5"
-    outfile_path_test = outfile_path + "_test.hdf5"
+    # train/eval/test are stitched from separate regions of the box (see spectra_stitching.SPLITS),
+    # so every split has its own forest spectra file and nothing is re-split here
+    for split in SPLITS:
+        sim_spec_path = forest_spectra_path(gridpoint_path, args_hash, split)
 
-    ####################### create the file and write the data to it #######################
-    spec_file_train = SpectraCustomHDF5(outfile_path_train)
-    spec_file_eval = SpectraCustomHDF5(outfile_path_eval)
-    spec_file_test = SpectraCustomHDF5(outfile_path_test)
-    spec_file_train.create_file(metadata_file, waves_train, fluxes_train, masks_train)
-    spec_file_eval.create_file(metadata_file, waves_eval, fluxes_eval, masks_eval)
-    spec_file_test.create_file(metadata_file, waves_test, fluxes_test, masks_test)
+        print(f"Loading Simulated Forest Spectra from {sim_spec_path}")
+        wave_sim, flux_sim, _ = load_forest_spectra(sim_spec_path)
+
+        wave_range_sel = (min_wavelength <= wave_sim) & (max_wavelength >= wave_sim)
+
+        wave_sim, flux_sim = wave_sim[wave_range_sel], flux_sim[:, wave_range_sel]
+
+        ####################### Load the SDSS spectra #######################
+
+        sdss_cache_path = "/pfs/10/project/bw21g005/ly_alpha_sbi_paper/SDSS_spectra/SDSS_support_files/"
+
+        if no_mask:
+            n_valid_pixels = wave_sim.shape[0]
+        else:
+            n_valid_pixels = 100
+
+        _, sigma_F_sdss, mask_sdss = load_sdss_sigma_F(sdss_cache_path, wave_sim[0], wave_sim[-1], wave_sim.shape[0], n_valid_pixels_min=n_valid_pixels, max_sigma_f=max_sigma_f)
+
+        # if no_mask, force the entire mask to be True
+        if no_mask:
+            mask_sdss = np.full_like(mask_sdss, True, dtype=bool)
+
+        ####################### Add noise to simulated Spectra #######################
+        n_sdss, n_sim = sigma_F_sdss.shape[0], flux_sim.shape[0]
+        replace = n_sdss < n_sim  # only reuse SDSS spectra if there are not enough of them
+
+        if n_sdss > 0:
+            sample_idx = rng.choice(n_sdss, size=n_sim, replace=replace)
+
+            sigma_F_appl = sigma_F_sdss[sample_idx]
+            mask_appl = mask_sdss[sample_idx]
+
+            assert sigma_F_appl.shape == mask_appl.shape == flux_sim.shape, \
+                    f"shapes {sigma_F_appl.shape=} / {mask_appl.shape=} dont match {flux_sim.shape=}"
+        else:
+            # sigma_F_appl = np.full(flux_sim.shape, 0.1, dtype=float)
+            mask_appl = np.full(flux_sim.shape, True, dtype=bool)
+
+        # if no_noise=False, add noise to the spectrum
+        if no_noise:
+            noisy_flux_sim = np.full(flux_sim.shape, np.nan, dtype=float)
+            noisy_flux_sim[mask_appl] = flux_sim[mask_appl]
+        else:
+            noisy_flux_sim = add_noise_to_spectrum(flux_sim, sigma_F_appl, mask_appl, rng=rng)
+
+        print(f"{split}: {flux_sim.shape} -> {noisy_flux_sim.shape}, drawn from {n_sdss} SDSS spectra with {replace=}")
+        print(f"masked pixel fraction: {1 - mask_appl.mean():.3f}, nan fraction in output: {np.isnan(noisy_flux_sim).mean():.3f}")
+
+        ####################### create the file and write the data to it #######################
+        spec_file = SpectraCustomHDF5(outfile_path + f"_{split}.hdf5")
+        spec_file.create_file(metadata_file, wave_sim, noisy_flux_sim, mask_appl)
 
 
 def main():
-    min_wavelength = 3600
-    max_wavelength = 3950
+    min_wavelength = 3800
+    max_wavelength = 4500
     max_sigma_f = 0.2
-    no_noise = False
+    no_noise = True
     no_mask = True
-    hash_spectra_files = "e16590fc78e11efb"
+    hash_spectra_files = "e9f3ace363dbe895"  # region-split version of "e16590fc78e11efb" (3800-4500 A, z = 2.0-3.0)
 
-    traing_set_folder_name = "short_SNR5_no_mask_multi_snaps"
+    traing_set_folder_name = "long_test_no_noise_no_mask_set"
 
     path_training_set_foler = f"ML_test_datasets/{traing_set_folder_name}"
 
