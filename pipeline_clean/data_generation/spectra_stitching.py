@@ -372,9 +372,10 @@ def create_forest_spectra(
         log_path (str): Path to the log file. Its directory must exist.
 
     Returns:
-        dict: Split name as key and a tuple (wave, flux, usage_records) as value, where wave is the 1D
+        results (dict): Split name as key and a tuple (wave, flux, usage_records) as value, where wave is the 1D
             wavelength grid, flux is a 2D array of shape (n_spectra, n_pixels), and usage_records is the
             list from fill_master_tau, with each record also holding the "left_wavelength" of its box.
+        args_hash (str): hash of the inputs
 
     Raises:
         AssertionError: If the stitched boxes do not cover the full wavelength range, or if two splits share a sightline.
@@ -442,7 +443,7 @@ def create_forest_spectra(
                                        "seed": -1 if seed is None else int(seed),
                                        "redshifts_to_use": np.asarray(redshifts_to_use, dtype=float)})
 
-    return results
+    return results, args_hash
         
 
 if __name__ == "__main__":
@@ -451,4 +452,4 @@ if __name__ == "__main__":
     test_splits = {'training': ((0.02, 0.68), 100), 'evaluation': ((0.72, 0.83), 100), 'testing': ((0.87, 0.98), 100)}
     redshifts_to_use = [2.0]
 
-    results = create_forest_spectra(test_path, test_range, redshifts_to_use, test_splits, save_spectra=False, seed=123)
+    results, args_hash = create_forest_spectra(test_path, test_range, redshifts_to_use, test_splits, save_spectra=False, seed=123)
