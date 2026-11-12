@@ -5,6 +5,10 @@ import json
 from spectra_stitching import load_forest_spectra, forest_spectra_path
 from compressed_spectra import load_spectra_cache
 
+# Version of the SDSS filtering in load_sdss_sigma_F. It is part of the hash of the filtered cache, so caches
+# made by older code are never loaded. Increase it with every change that alters the filtered SDSS spectra.
+SDSS_FILTER_VERSION = 1
+
 
 import h5py
 class SpectraCustomHDF5:
@@ -158,7 +162,8 @@ def hash_args(unfiltered_cache_path, min_wavelength, max_wavelength, target_leng
         "wavelength_range": [float(min_wavelength), float(max_wavelength)],
         "target_length": int(target_length),
         "n_valid_pixels_min": int(n_valid_pixels_min),
-        "max_sigma_f": float(max_sigma_f)
+        "max_sigma_f": float(max_sigma_f),
+        "sdss_filter_version": SDSS_FILTER_VERSION,
     }
 
     return hashlib.sha256(json.dumps(args, sort_keys=True).encode()).hexdigest()[:n_chars]
@@ -170,21 +175,23 @@ def make_outfile_path(box_path, outfile_path_base):
 
     path = os.path.join(outfile_path_base, hash_name)
 
-    with open("hash_mapping.txt", "a") as f:
+    # the mapping lives next to the files it describes, in the dataset folder
+    with open(os.path.join(outfile_path_base, "hash_mapping.txt"), "a") as f:
         f.write(f"{box_path} -> {hash_name}\n")
 
     return path
 
 
-def load_sdss_sigma_F(cache_path, min_wavelength, max_wavelength, target_length, n_valid_pixels_min=100, max_sigma_f=0.5):
+def load_sdss_sigma_F(unfiltered_cache_file, min_wavelength, max_wavelength, target_length, n_valid_pixels_min=100, max_sigma_f=0.5):
 
-    unfiltered_cache_path = os.path.join(cache_path, "spectra_cache.npz")
+    # the filtered cache is written into the same folder as the unfiltered one
+    cache_dir = os.path.dirname(unfiltered_cache_file)
 
-    args_hash = hash_args(cache_path, min_wavelength, max_wavelength, target_length, n_valid_pixels_min, max_sigma_f)
+    args_hash = hash_args(unfiltered_cache_file, min_wavelength, max_wavelength, target_length, n_valid_pixels_min, max_sigma_f)
 
-    print(f"Loading SDSS spectra from {unfiltered_cache_path} and saving them under hash {args_hash}")
+    print(f"Loading SDSS spectra from {unfiltered_cache_file} and saving them under hash {args_hash}")
 
-    filtered_cache_path = os.path.join(cache_path, f"spectra_filtered_{args_hash}.npz")
+    filtered_cache_path = os.path.join(cache_dir, f"spectra_filtered_{args_hash}.npz")
 
     if os.path.isfile(filtered_cache_path):
         with np.load(filtered_cache_path) as npz:
@@ -196,7 +203,7 @@ def load_sdss_sigma_F(cache_path, min_wavelength, max_wavelength, target_length,
 
             return data_sdss["wavelength"], data_sdss["sigma_F"], data_sdss["mask"], args_hash
 
-    data_sdss = load_spectra_cache(unfiltered_cache_path)
+    data_sdss = load_spectra_cache(unfiltered_cache_file)
 
     ####################### Filter SDSS spectra for Quasar redshift #######################
     min_req_z = max_wavelength/1215.67 - 1
@@ -214,6 +221,7 @@ def load_sdss_sigma_F(cache_path, min_wavelength, max_wavelength, target_length,
 
     diff = abs(wave_sdss[i0:i1].shape[0] - target_length)
 
+    # TODO: fix the root cause of this eventually instead of this ugly work around
     if 1 >= diff > 0:
         i1 += diff
     if diff > 1:
@@ -261,11 +269,14 @@ def add_noise_to_spectra(flux_sim, noise_type, snr, sigma_F_sdss, sample_idx, rn
 
         noisy_flux_sim = flux_sim + rng.normal(0.0, sigma, size=flux_sim.shape)
 
-    if noise_type == "realistic":
+    elif noise_type == "realistic":
 
         sigma_F_appl = sigma_F_sdss[sample_idx]
 
         noisy_flux_sim = flux_sim + rng.normal(0.0, sigma_F_appl)
+
+    else:
+        raise ValueError(f"Unknown noise_type {noise_type!r}, expected 'constant' or 'realistic'")
 
     return noisy_flux_sim
 
@@ -274,7 +285,8 @@ def add_masking_to_spectra(flux_sim, mask_sdss, sample_idx):
 
     mask_appl = mask_sdss[sample_idx]
 
-    return flux_sim, mask_appl
+    # masked pixels hold NaN in every setting (with realistic noise they already do, because sigma_F is NaN there)
+    return np.where(mask_appl, flux_sim, np.nan), mask_appl
     
 
 def apply_noise_and_mask(gridpoint_path, outfile_path_base, splits, min_w, max_w, long_specs_hash, noise, masking, noise_type=None, snr=None, spectra_cache_file=None, min_valid_pixels=None, rng=None):
@@ -282,7 +294,7 @@ def apply_noise_and_mask(gridpoint_path, outfile_path_base, splits, min_w, max_w
     outfile_path = make_outfile_path(gridpoint_path, outfile_path_base)
 
     if rng is None:
-        rng = np.random
+        rng = np.random.default_rng()
 
     Omega0, OmegaBaryon, OmegaLambda, HubbleParam = get_cosmo_parameters(gridpoint_path)
     
@@ -298,8 +310,9 @@ def apply_noise_and_mask(gridpoint_path, outfile_path_base, splits, min_w, max_w
         sim_spec_path = forest_spectra_path(gridpoint_path, long_specs_hash, split)
         wave_sim, flux_sim, _ = load_forest_spectra(sim_spec_path)
 
-        wave_range_sel = (min_w <= wave_sim) & (max_w >= wave_sim)
-        wave_sim, flux_sim = wave_sim[wave_range_sel], flux_sim[:, wave_range_sel]
+        # same rule as in the stitching: from the pixel closest to min_w to the pixel closest to max_w
+        i_min, i_max = find_closest_index(wave_sim, min_w), find_closest_index(wave_sim, max_w)
+        wave_sim, flux_sim = wave_sim[i_min : i_max + 1], flux_sim[:, i_min : i_max + 1]
 
         if (noise and noise_type=="realistic") or masking: # load sdss spectra
             # set number of min valid pixels
@@ -317,6 +330,10 @@ def apply_noise_and_mask(gridpoint_path, outfile_path_base, splits, min_w, max_w
 
             # get noise and masking from sdss spectra
             _, sigma_F_sdss, mask_sdss, sdss_specs_hash = load_sdss_sigma_F(spectra_cache_file, wave_sim[0], wave_sim[-1], wave_sim.shape[0], n_valid_pixels_min=n_valid_pixels, max_sigma_f=max_sigma_f)
+
+            if mask_sdss.shape[0] == 0:
+                raise ValueError(f"No SDSS spectrum passes the filters (min. {n_valid_pixels} valid pixels, "
+                                 f"mean sigma_F <= {max_sigma_f}) in {wave_sim[0]:.1f}-{wave_sim[-1]:.1f} A.")
 
             # draw the SDSS spectra once, so noise and mask of each sim spectrum come from the same quasar
             n_sdss, n_sim = mask_sdss.shape[0], flux_sim.shape[0]
@@ -366,7 +383,9 @@ def main():
     long_specs_hash = "fa583d77a369688b"
     outfile_path = "/pfs/10/project/bw21g005/ly_alpha_sbi_paper/ML_training_datasets/gridpoint0"
 
-    apply_noise_and_mask(test_gp, outfile_path, splits, min_w, max_w, long_specs_hash, noise, masking, noise_type, snr, spectra_cache_file, min_valid_pixels)
+    rng = np.random.default_rng(123)
+
+    apply_noise_and_mask(test_gp, outfile_path, splits, min_w, max_w, long_specs_hash, noise, masking, noise_type, snr, spectra_cache_file, min_valid_pixels, rng=rng)
 
 
 if __name__ == "__main__":

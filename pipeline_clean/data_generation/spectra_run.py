@@ -50,7 +50,8 @@ def main():
     gridpoint_to_run = "gridpoint0"
     path = os.path.join(basepath, gridpoint_to_run)
 
-    log_path = "/logs/datageneration.log"
+    log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", "datageneration.log")
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
 
     redshifts = [2.0, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9, 3.0]
 

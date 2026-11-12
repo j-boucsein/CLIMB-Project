@@ -4,8 +4,21 @@ import os
 import json
 import h5py
 import hashlib
+import copy
 from temet.spectra.util import create_wavelength_grid
 import math
+
+# Version of the stitching algorithm. It is part of the hash, so files made by older code are never loaded.
+# Increase it with every change that alters the stitched spectra.
+STITCHING_VERSION = 3
+
+# Margins in pixels that are stitched beyond both ends of the wavelength range and cut away at the end, so that the
+# edge pixels also get the absorption that spills over from the neighbouring boxes (it is essentially gone after
+# ~10 px). On the left every spectrum gets a random margin from [EDGE_MARGIN_MIN, EDGE_MARGIN_MIN + length of the
+# first box), so that the box seams are not at the same pixels in every spectrum. On the right the margin is fixed.
+# Changing them changes the output, so increase STITCHING_VERSION.
+EDGE_MARGIN_MIN = 20
+EDGE_MARGIN_RIGHT = 20
 
 
 def round_half_up(x):
@@ -14,6 +27,26 @@ def round_half_up(x):
 
 def find_closest_index(array, value):
     return int(np.argmin(np.abs(array - value)))
+
+
+def box_rng(seed, box_path, stage):
+    """ Random number generator for one box and one step of the pipeline. Every box gets its own
+    stream, which does not depend on the order or the number of boxes in the config, so a single box
+    can be regenerated on its own with the same result.
+
+    Args:
+        seed (int): Global random seed from the config.
+        box_path (str): Path to the simulated box. Only the box name (last folder of the path) is used,
+            so moving the data does not change the random numbers.
+        stage (int): Step of the pipeline that uses the generator (0 = stitching, 1 = noise and masking),
+            so that different steps of the same box get independent streams.
+
+    Returns:
+        np.random.Generator: Generator seeded with (seed, box key, stage).
+    """
+    box_name = os.path.basename(os.path.normpath(box_path))
+    box_key = int.from_bytes(hashlib.sha256(box_name.encode()).digest()[:4], "little")
+    return np.random.default_rng([seed, box_key, stage])
 
 
 def get_spectra_info(path, redshifts_to_use, Line_wavelength_restframe):
@@ -45,7 +78,7 @@ def get_spectra_info(path, redshifts_to_use, Line_wavelength_restframe):
         sim_z = sim.redshift
 
         # get spectra file paths
-        gp_name = path.split("/")[-1]
+        gp_name = os.path.basename(os.path.normpath(path))
         path_spec_here = os.path.join(path, "data.files", "spectra", f"spectra_{gp_name}_z{z:.1f}_n100d2-fullbox_SDSS-BOSS_HI_combined.hdf5")
 
         # get spectra width in pixels
@@ -61,7 +94,7 @@ def get_spectra_info(path, redshifts_to_use, Line_wavelength_restframe):
         idx_left = find_closest_index(wavelengths, left_edge)
         idx_right = find_closest_index(wavelengths, right_edge)
 
-        n_pixels = idx_right - idx_left + 1 # +1 for inclusive right edge
+        n_pixels = idx_right - idx_left
 
         available_spectra_info[z] = {
             "sim_z": sim_z,
@@ -159,7 +192,7 @@ def compute_repeat_counts(spectra_info, used_redshifts, boundary_indices):
     return spectra_info, final_end_idx
 
 
-def fill_master_tau(spectra_info, used_redshifts, tau_master_1d, n_spectra_to_generate, region=(0.0, 1.0), rng=None):
+def fill_master_tau(spectra_info, used_redshifts, tau_master_1d, n_spectra_to_generate, region=(0.0, 1.0), rng=None, tau_cache=None):
     """ Fill the master tau grid with spectra from the given redshifts, repeating each redshift's spectra as needed to fill the master grid. The region parameter specifies the fraction of the available spectra to use for each redshift, where 0.0 is the left edge and 1.0 is the right edge of the available spectra. The same region is used for all redshifts, so that a given region corresponds to a slab of the box at every redshift.
     
     Args:
@@ -177,7 +210,8 @@ def fill_master_tau(spectra_info, used_redshifts, tau_master_1d, n_spectra_to_ge
         n_spectra_to_generate (int): Number of spectra to generate.
         region (tuple): Tuple of (left, right) specifying the fraction of the available spectra to use for each redshift, where 0.0 is the left edge and 1.0 is the right edge of the available spectra.
         rng (np.random.Generator): Random number generator to use for selecting spectra. If None, a new generator is created.
-        
+        tau_cache (dict): Optional dictionary from spectra file path to its full tau array. Datasets that are not in it are read once and added, so that repeated calls can share it. If None, a new one is created for this call.
+
     Returns:
         tau_master (np.ndarray): 2D array of the master tau grid filled with spectra, with shape (n_spectra_to_generate, n_pixels_master).
         usage_records (list): List of dictionaries recording which spectra were used for each generated spectrum, with keys:
@@ -190,6 +224,8 @@ def fill_master_tau(spectra_info, used_redshifts, tau_master_1d, n_spectra_to_ge
     """
     if rng is None:
         rng = np.random.default_rng()
+    if tau_cache is None:
+        tau_cache = {}
 
     n_pixels_master = tau_master_1d.shape[0]
     tau_master = np.tile(tau_master_1d, (n_spectra_to_generate, 1)).astype(float)
@@ -208,39 +244,42 @@ def fill_master_tau(spectra_info, used_redshifts, tau_master_1d, n_spectra_to_ge
         # only draw from the sightlines inside region (a slab of the box)
         region_indices = np.arange(round(region[0] * n_available), round(region[1] * n_available))
 
-        with h5py.File(info["path"], "r") as f:
-            tau_dset = f["tau_HI_1215"]
-            n_source_pixels = tau_dset.shape[1]
+        # read the whole dataset once: single rows of the compressed chunks are slow to read
+        if info["path"] not in tau_cache:
+            with h5py.File(info["path"], "r") as f:
+                tau_cache[info["path"]] = f["tau_HI_1215"][:]
+        tau_all = tau_cache[info["path"]]
+        n_source_pixels = tau_all.shape[1]
 
-            for out_i in range(n_spectra_to_generate):
-                chosen_indices = rng.choice(region_indices, size=n_repeats, replace=False)
+        for out_i in range(n_spectra_to_generate):
+            chosen_indices = rng.choice(region_indices, size=n_repeats, replace=False)
 
-                pos = start_idx
-                for spec_idx in chosen_indices:
-                    full_segment = tau_dset[int(spec_idx), :]
+            pos = start_idx
+            for spec_idx in chosen_indices:
+                full_segment = tau_all[int(spec_idx), :]
 
-                    # shift so that idx_left in the source aligns with pos in the master grid
-                    shift = pos - idx_left
+                # shift so that idx_left in the source aligns with pos in the master grid
+                shift = pos - idx_left
 
-                    # clip to valid overlap between shifted source and master grid
-                    src_start = max(0, -shift)
-                    src_end = min(n_source_pixels, n_pixels_master - shift)
+                # clip to valid overlap between shifted source and master grid
+                src_start = max(0, -shift)
+                src_end = min(n_source_pixels, n_pixels_master - shift)
 
-                    if src_end > src_start:
-                        dst_start = src_start + shift
-                        dst_end = src_end + shift
-                        tau_master[out_i, dst_start:dst_end] += full_segment[src_start:src_end]
+                if src_end > src_start:
+                    dst_start = src_start + shift
+                    dst_end = src_end + shift
+                    tau_master[out_i, dst_start:dst_end] += full_segment[src_start:src_end]
 
-                    usage_records[out_i].append({
-                        "redshift": z,
-                        "sim_redshift": info["sim_z"],
-                        "redshift_width": info["dz"],
-                        "spec_idx": int(spec_idx),
-                        "left_pos": int(pos),
-                        "spec_path": info["path"],
-                    })
+                usage_records[out_i].append({
+                    "redshift": z,
+                    "sim_redshift": info["sim_z"],
+                    "redshift_width": info["dz"],
+                    "spec_idx": int(spec_idx),
+                    "left_pos": int(pos),
+                    "spec_path": info["path"],
+                })
 
-                    pos += L
+                pos += L
 
     return tau_master, usage_records
 
@@ -265,7 +304,10 @@ def save_forest_spectra(save_path, wave_master, flux_master, usage_records=None,
 
     os.makedirs(os.path.dirname(os.path.abspath(save_path)), exist_ok=True)
 
-    with h5py.File(save_path, "w") as f:
+    # write under a temporary name and rename at the end, so that a killed job never leaves an
+    # incomplete file under the final name (which the cache check in create_forest_spectra would accept)
+    tmp_path = save_path + ".tmp"
+    with h5py.File(tmp_path, "w") as f:
         f.create_dataset("wave", data=np.asarray(wave_master, dtype=np.float64))
         f.create_dataset("flux", data=flux_master.astype(np.float32),
                          chunks=(min(64, flux_master.shape[0]), flux_master.shape[1]),
@@ -277,6 +319,8 @@ def save_forest_spectra(save_path, wave_master, flux_master, usage_records=None,
 
         for key, value in (attrs or {}).items():
             f.attrs[key] = value
+
+    os.replace(tmp_path, save_path)  # atomic on the same file system
 
     return save_path
 
@@ -330,6 +374,7 @@ def hash_spectra_args(wavelength_range, redshifts_to_use,
         "splits": {split: [[float(f) for f in region], int(n)] for split, (region, n) in splits.items()},
         "Line_wavelength_restframe": float(Line_wavelength_restframe),
         "seed": None if seed is None else int(seed),
+        "stitching_version": STITCHING_VERSION,
     }
 
     return hashlib.sha256(json.dumps(args, sort_keys=True).encode()).hexdigest()[:n_chars]
@@ -389,7 +434,7 @@ def create_forest_spectra(
     # check if the spectra already exist for these arguments, and load them if so
     if all(os.path.exists(p) for p in save_paths.values()):
         write_log(log_path, f"Forest spectra for these arguments already exist. Loading them instead of recomputing.")
-        return {split: load_forest_spectra(p) for split, p in save_paths.items()}
+        return {split: load_forest_spectra(p) for split, p in save_paths.items()}, args_hash
 
     # get the necessary info about the spectra (dz, path, number of pixels and number of available spectra)
     spectra_info = get_spectra_info(path, redshifts_to_use, Line_wavelength_restframe)
@@ -397,36 +442,67 @@ def create_forest_spectra(
     # make the master grid
     wave_master, _, tau_master = create_wavelength_grid(instrument="SDSS-BOSS")
 
-    # truncate master grid for left wavelength range
-    wl_min, wl_max = wavelength_range
-    idx_start = find_closest_index(wave_master, wl_min)
-    wave_master, tau_master  = wave_master[idx_start:], tau_master[idx_start:]
-
     # get the boundaries in wavelength
     used_redshifts, boundaries = get_interval_boundaries(spectra_info, wavelength_range)
-    # get the boundary indices
+
+    # left margins are drawn from [EDGE_MARGIN_MIN, margin_hi), one box length wide, so that the seam positions are
+    # uniformly distributed over one box. The margin is filled with the first snapshot.
+    wl_min, wl_max = wavelength_range
+    idx_min = find_closest_index(wave_master, wl_min)
+    margin_hi = EDGE_MARGIN_MIN + spectra_info[used_redshifts[0]]["n_pixels"]  # exclusive
+    if margin_hi - 1 > idx_min:
+        message = (f"Warning: wl_min={wl_min} is only {idx_min} px from the start of the instrument grid, the left margin "
+                   f"is drawn from [{EDGE_MARGIN_MIN}, {idx_min}] instead of [{EDGE_MARGIN_MIN}, {margin_hi - 1}].")
+        print(message)
+        write_log(log_path, message)
+        margin_hi = idx_min + 1
+    assert margin_hi > EDGE_MARGIN_MIN, (f"wl_min={wl_min} is closer than EDGE_MARGIN_MIN={EDGE_MARGIN_MIN} px to the start of the instrument grid.")
+
+    # truncate master grid so that the largest left margin starts at index 0
+    idx_start = idx_min - (margin_hi - 1)
+    wave_master, tau_master = wave_master[idx_start:], tau_master[idx_start:]
+    idx_min -= idx_start                                 # first pixel of the returned spectra
+    idx_end = find_closest_index(wave_master, wl_max)    # last pixel of the returned spectra
+    idx_cover = idx_end + EDGE_MARGIN_RIGHT              # last pixel the boxes have to cover
+    assert idx_cover < wave_master.shape[0], (f"wl_max={wl_max} is closer than EDGE_MARGIN_RIGHT={EDGE_MARGIN_RIGHT} px to the end of the instrument grid.")
+
+    # get the boundary indices. The first and the last one are replaced by the margins for each spectrum below.
     boundary_indices = [find_closest_index(wave_master, b) for b in boundaries]
-    assert boundary_indices[0] == 0, (f"Expected first boundary index to be 0 after left truncation, got {boundary_indices[0]} instead.")
+    assert boundary_indices[0] == idx_min, (f"Expected first boundary index to be {idx_min} after left truncation, got {boundary_indices[0]} instead.")
 
-    spectra_info, final_end_idx = compute_repeat_counts(spectra_info, used_redshifts, boundary_indices)
-
-    idx_end = find_closest_index(wave_master, wl_max)
-
-    assert final_end_idx >= idx_end, (f"End index of computed coverage of spectra {final_end_idx} is less than the end index of the given wavelength interval {idx_end}. This indicates that the spectra stitching did not cover the entire wavelength range.")
-
-    rng = np.random.default_rng(seed)
+    # one stream per box, so that boxes with the same layout do not draw the same sightlines
+    rng = box_rng(seed, path, stage=0) if seed is not None else np.random.default_rng()
+    layouts = {}  # left margin -> copy of spectra_info with start_idx and n_repeats for this margin
+    tau_cache = {}  # spectra file path -> full tau array, so that every file is read only once
     results = {}
     for split, (region, n_spectra) in splits.items():
         print(f"Stitching {n_spectra} {split} spectra from region {region} of the sightline grid")
-        tau_split, usage_records = fill_master_tau(spectra_info, used_redshifts, tau_master, n_spectra, region=region, rng=rng)
+        margins = rng.integers(EDGE_MARGIN_MIN, margin_hi, size=n_spectra)
+
+        tau_split = np.empty((n_spectra, idx_end - idx_min + 1))
+        usage_records = [None] * n_spectra
+
+        # spectra with the same left margin have the same box layout, so they are stitched together
+        for margin in np.unique(margins):
+            if margin not in layouts:
+                margin_boundaries = [idx_min - margin] + boundary_indices[1:-1] + [idx_cover]
+                layouts[margin], final_end_idx = compute_repeat_counts(copy.deepcopy(spectra_info), used_redshifts, margin_boundaries)
+                assert final_end_idx >= idx_cover, (f"End index of computed coverage of spectra {final_end_idx} is less than the end index of the given wavelength interval plus margin {idx_cover}. This indicates that the spectra stitching did not cover the entire wavelength range.")
+
+            which = np.flatnonzero(margins == margin)
+            tau_margin, records_margin = fill_master_tau(layouts[margin], used_redshifts, tau_master, which.shape[0], region=region, rng=rng, tau_cache=tau_cache)
+            tau_split[which] = tau_margin[:, idx_min : idx_end + 1]  # cut away the margins, +1 for inclusive right edge
+            for j, records in zip(which, records_margin):
+                usage_records[j] = records
 
         for j in range(len(usage_records)):
             for i, x in enumerate(usage_records[j]):
                 #print(x)
-                usage_records[j][i]["left_wavelength"] = wave_master[x["left_pos"]]
+                usage_records[j][i]["left_wavelength"] = wave_master[x["left_pos"]]  # on the extended grid, so before the shift below
+                usage_records[j][i]["left_pos"] = x["left_pos"] - idx_min           # relative to the returned grid, negative inside the left margin
 
-        flux_split = np.exp(-tau_split[:, : idx_end + 1]) # +1 for inclusive right edge
-        results[split] = (wave_master[: idx_end + 1], flux_split, usage_records)
+        flux_split = np.exp(-tau_split)
+        results[split] = (wave_master[idx_min : idx_end + 1], flux_split, usage_records)
 
     check_splits_disjoint(results)
 
@@ -441,6 +517,7 @@ def create_forest_spectra(
                                        "region": np.asarray(region, dtype=float),
                                        "n_spectra": n_spectra,
                                        "seed": -1 if seed is None else int(seed),
+                                       "stitching_version": STITCHING_VERSION,
                                        "redshifts_to_use": np.asarray(redshifts_to_use, dtype=float)})
 
     return results, args_hash
