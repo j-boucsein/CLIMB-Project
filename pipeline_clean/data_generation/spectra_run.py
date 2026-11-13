@@ -1,11 +1,14 @@
 import os
+import sys
 import time
 import temet
 
+# folder above this one (pipeline_clean), so that the shared util package can be imported
+PIPELINE_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if PIPELINE_ROOT not in sys.path:
+    sys.path.insert(1, PIPELINE_ROOT)
 
-def write_log(log_path, message):
-    with open(log_path, "a") as log_file:
-        log_file.write(message + "\n")
+from util.helpers import write_log
 
 
 def spectrum_filename(name, z):

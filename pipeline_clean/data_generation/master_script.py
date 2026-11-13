@@ -1,5 +1,6 @@
 import yaml
 import os
+import sys
 import time
 import shutil
 
@@ -9,6 +10,13 @@ from noise_and_masking import apply_noise_and_mask
 
 # folder of this script, so that the config and the logs are found from any working directory
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# folder above this one (pipeline_clean), so that the shared util package can be imported
+PIPELINE_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if PIPELINE_ROOT not in sys.path:
+    sys.path.insert(1, PIPELINE_ROOT)
+
+from util.helpers import write_log
 
 
 def read_config(config_path):
@@ -22,11 +30,6 @@ def initialize_log(log_path):
     with open(log_path, "w") as log_file:
         log_file.write("                      Spectra Generation Log                      \n")
         log_file.write("==================================================================\n\n")
-
-
-def write_log(log_path, message):
-    with open(log_path, "a") as log_file:
-        log_file.write(message + "\n")
 
 
 def validate_config(config_args):
@@ -175,7 +178,7 @@ def main():
     min_valid_pixels = config_args["min_valid_pixels"]
     spectra_cache_file = config_args["spectra_cache_file"]
 
-    log_message =f"Reading parameters from config file:\nWavelengts: ({wavelength_range_train_min}, {wavelength_range_train_max}\nNoise: {noise}  -  Type: {noise_type}  -  SNR: {snr}\nMasking: {masking}  -  Min valid pixels: {min_valid_pixels}\nSpectra Cache File: {spectra_cache_file})"
+    log_message =f"Reading parameters from config file:\nWavelengts: ({wavelength_range_train_min}), {wavelength_range_train_max}\nNoise: {noise}  -  Type: {noise_type}  -  SNR: {snr}\nMasking: {masking}  -  Min valid pixels: {min_valid_pixels}\nSpectra Cache File: {spectra_cache_file})"
     write_log(log_file_path, log_message)
 
     out_folder_base = config_args["out_path_base"]

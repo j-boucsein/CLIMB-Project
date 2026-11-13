@@ -1,12 +1,20 @@
 import temet
 import numpy as np
 import os
+import sys
 import json
 import h5py
 import hashlib
 import copy
 from temet.spectra.util import create_wavelength_grid
 import math
+
+# folder above this one (pipeline_clean), so that the shared util package can be imported
+PIPELINE_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if PIPELINE_ROOT not in sys.path:
+    sys.path.insert(1, PIPELINE_ROOT)
+
+from util.helpers import find_closest_index, write_log
 
 # Version of the stitching algorithm. It is part of the hash, so files made by older code are never loaded.
 # Increase it with every change that alters the stitched spectra.
@@ -23,10 +31,6 @@ EDGE_MARGIN_RIGHT = 20
 
 def round_half_up(x):
     return math.floor(x + 0.5)
-
-
-def find_closest_index(array, value):
-    return int(np.argmin(np.abs(array - value)))
 
 
 def box_rng(seed, box_path, stage):
@@ -378,11 +382,6 @@ def hash_spectra_args(wavelength_range, redshifts_to_use,
     }
 
     return hashlib.sha256(json.dumps(args, sort_keys=True).encode()).hexdigest()[:n_chars]
-
-
-def write_log(log_path, message):
-    with open(log_path, "a") as log_file:
-        log_file.write(message + "\n")
 
 
 def create_forest_spectra(
